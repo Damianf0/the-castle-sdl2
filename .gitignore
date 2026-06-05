@@ -1,0 +1,28 @@
+# --- Editor / build ---
+.vscode/
+.zip/
+build/
+vram/
+__pycache__/
+*.pyc
+
+# --- Binarios / ejecutables ---
+*.exe
+*.dll
+
+# --- ROM (material con copyright, NO se distribuye) ---
+*.rom
+
+# --- Artefactos / scratch de captura y debug ---
+*.bmp
+*.bin
+*.png
+*.gif
+
+# scratch extra
+*_done.txt
+*.npy
+*.pkl
+openmsx_err.txt
+noact
+enemy_trace.txt

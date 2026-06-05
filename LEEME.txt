@@ -1,0 +1,19 @@
+The Castle (MSX -> C/SDL2) — Windows x64. Build con cargador de objetos + arranque
+en sala poblada.
+
+CORRER: los 3 archivos en la misma carpeta, doble-click en the_castle.exe.
+  the_castle.exe + SDL2.dll + the_castle.rom
+
+NOVEDAD DE ESTE BUILD:
+  - objects_load_from_rom(): carga enemigos/coleccionables/salidas por sala desde el ROM.
+  - Arranca en la sala 0x70 (poblada: enemigos 0x3B + items), en vez de la 0x05 (vacía).
+  - Override: variable de entorno CASTLE_START_ROOM=0xNN para arrancar en otra sala.
+      ej. en cmd:   set CASTLE_START_ROOM=0x00 && the_castle.exe
+
+QUÉ ESPERAR (honesto):
+  El loader puebla las tablas y el game-loop llama a las funciones de dibujo de objetos.
+  Si todo el pipeline de draw del port funciona, deberías VER enemigos/items al arrancar
+  el juego (apretá fire/espacio para pasar el título). Si el render de objetos del port
+  todavía tiene partes stub, puede que se vean parcial o mal — avisá qué ves.
+
+Controles: cursores/WASD mover, Z/Espacio acción/empezar, Esc salir.
