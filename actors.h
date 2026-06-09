@@ -21,6 +21,10 @@ void actors_init_room(unsigned char room, int entry_edge);
 /* solidez del tile base de pantalla (sr,sc) — usado por blocks_port */
 int actors_tile_solid(int srow, int scol);
 
+/* limpia celdas del tilemap de colisión de trabajo (tiles de PANTALLA) —
+ * lo llama doors_port al abrir una puerta / restaurarla abierta */
+void actors_cm_clear(int scol, int srow, int w, int h);
+
 /* Avanza un frame con el input (flags left/right/up).
  * Retorna borde de salida: 0=ninguno 1=arriba 3=der 5=abajo 7=izq. */
 int actors_update(int left, int right, int up);

@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-06-09 (3) — Collision now uses the ROM's REAL tilemap (0xE496), no more pixel heuristics
+
+### The deep fix (user demanded: "understand the ROM, stop guessing")
+Player/map collision no longer derives solidity from rendered pixels (the
+40%-nonblack-tile heuristic — the root cause of every phantom-collision class
+of bug). It now uses the game's OWN collision tilemap at RAM 0xE496, captured
+per-room (colmap_XX.bin → `colmap_data.c`, 100×20×30).
+
+Cell semantics REVERSE-ENGINEERED and verified against every known object in
+rooms 0x70 and 0x00 (gates, stairs, keys, items, block, both archers, walls):
+  0x00 air | 0xE0 wall/floor | 0xA0/0xA2 door(2x3)/stair | 0xA8 pushable block
+  0x38 enemy | 0x24/0x20 collectible (key/item)
+  **bit 0x80 = blocks the player** (E0/A0/A2/A8 have it; 38/24/20 don't —
+  that's why you walk THROUGH keys/items/enemies and not walls/doors).
+Bytes 600-899 of the dump are the parallel 0xE6EE table (cell → object index)
+— matches gate slot indices; documented for future use.
+
+### Implementation
+- `gen_colmap_data.py` → `colmap_data.c/.h` (COLMAP[100][20][30], field→screen
+  offset (+1,+4)).
+- actors.c: working copy `s_cm` per room; solid = `cell & 0x80`. 0xA8 cells
+  cleared at load (blocks simulated dynamically via block_solid). Doors stay
+  solid until opened: doors_port now calls `actors_cm_clear()` on open AND when
+  restoring a persisted-open door (incl. twins). DELETED: compute_solid pixel
+  heuristic, tile_solid[], and ALL spawn/key/item-cell exclusion hacks — the
+  real map simply doesn't mark those as blocking.
+- Edges: HUD rows mirror field row 0 (vertical shaft exits now possible),
+  below-field = fall exit, screen cols 0/31 mirror field cols 0/29 (open edge
+  doors are real passages).
+- spawn_player scans the real map for a 2x2 hole with real floor below.
+
+### Verified (harness battery on real map)
+walk/feet-on-floor ✓, door blocks flush without key ✓, opens+consumes with
+key ✓, block push (now reaches col 18 — heuristic had invented a wall) ✓,
+key collect ✓, jump arc intact incl. real ceiling hit under mid platform ✓.
+
 ## 2026-06-09 (2) — Edge-based hitbox (16x16) + room transitions preserve position
 
 ### Fixed (user-reported)

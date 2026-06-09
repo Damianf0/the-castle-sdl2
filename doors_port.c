@@ -8,6 +8,7 @@
 #include "doors_port.h"
 #include "doors_data.h"
 #include "keys_port.h"
+#include "actors.h"
 
 RoomDoor g_door[ROOMDOOR_MAX];
 int      g_door_n;
@@ -30,6 +31,8 @@ void doors_room_init(unsigned char room)
         p->color = d->color;
         p->count = 1;   /* requisito = 1 llave del color (la que corresponde) */
         p->open = s_dopen[idx][i];   /* restaurar si ya estaba abierta */
+        if (p->open)    /* abierta: limpiar sus celdas del tilemap de colisión */
+            actors_cm_clear(p->dcol, p->drow, p->dw, p->dh);
     }
 }
 
@@ -88,6 +91,7 @@ void doors_update(int px, int py, int pw, int ph)
                 g_key_inv[c] -= p->count;
                 p->open = 1;
                 s_dopen[s_didx][i] = 1;   /* persiste: queda abierta */
+                actors_cm_clear(p->dcol, p->drow, p->dw, p->dh);  /* pasable ya */
                 open_twin(s_didx, p);     /* y abre la gemela de la sala vecina */
             }
         }

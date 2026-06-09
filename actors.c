@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include "actors.h"
 #include "map_real.h"
+#include "colmap_data.h"
 #include "enemies_port.h"
 #include "doors_port.h"
 #include "blocks_port.h"
@@ -28,8 +29,24 @@ int g_enemy_n;
 int g_enemy_px[MAX_ENEMIES], g_enemy_py[MAX_ENEMIES], g_enemy_dir[MAX_ENEMIES];
 
 static int g_room_idx;           /* sala actual (ry*10+rx) */
-static int tile_solid[RT_COUNT]; /* 1 si el tile es piso/pared sólida */
-static int solid_ready;
+
+/* Copia de trabajo del TILEMAP DE COLISIÓN REAL del ROM (0xE496) para la sala
+ * actual. Es el dato que usa el juego original: bit 0x80 = bloquea al jugador
+ * (paredes E0, puertas A0/A2, bloques A8); enemigos 0x38 y recogibles 0x24/0x20
+ * NO bloquean. Se muta al abrir puertas (se limpian sus celdas). */
+static uint8_t s_cm[CM_ROWS][CM_COLS];
+
+/* Limpia celdas del tilemap de trabajo (en tiles de PANTALLA). Lo llama
+ * doors_port al abrir/restaurar una puerta abierta. */
+void actors_cm_clear(int scol, int srow, int w, int h)
+{
+    for (int r = srow; r < srow + h; r++)
+        for (int c = scol; c < scol + w; c++) {
+            int fr = r - 4, fc = c - 1;
+            if (fr >= 0 && fr < CM_ROWS && fc >= 0 && fc < CM_COLS)
+                s_cm[fr][fc] = 0;
+        }
+}
 
 /* --- Estado del salto FIEL (capturado del ROM vía openMSX) ---------------
  * Caminar = 4 px/frame. Salto = SPACE: sube 4 px/frame mientras se mantiene
@@ -44,50 +61,34 @@ static int p_rise_left;          /* frames de subida restantes */
 static int p_hover_left;         /* frames de flotación restantes */
 static int p_jump_prev;          /* estado anterior de la tecla de salto (flanco) */
 
-/* Un tile es sólido si >=40% de sus píxeles visibles son no-negros.
- * RT_TILES[t] = 8 bytes patrón + 8 bytes color (fg<<4|bg por fila). */
-static void compute_solid(void)
+/* Solidez del campo en coords de CAMPO (fila 0..19, col 0..29), con espejado
+ * en los bordes: la pantalla tiene 32 cols pero el campo 30 (la col 0 y 31 de
+ * pantalla espejan la col 0/29 del campo: si hay puerta abierta es pasaje).
+ * Arriba del campo (HUD) espeja la fila 0 (permite salir por pozos verticales);
+ * debajo del campo = salida (caer a la sala de abajo). */
+static int cm_solid(int fr, int fc)
 {
-    for (int t = 0; t < RT_COUNT; t++) {
-        int nb = 0;
-        for (int row = 0; row < 8; row++) {
-            uint8_t pat = RT_TILES[t][row], col = RT_TILES[t][8 + row];
-            uint8_t fg = col >> 4, bg = col & 0x0F;
-            for (int b = 0; b < 8; b++) {
-                uint8_t pi = (pat & (0x80u >> b)) ? fg : bg;
-                if (pi > 1) nb++;
-            }
-        }
-        tile_solid[t] = (nb >= 26);
-    }
-    solid_ready = 1;
+    if (fc < 0) fc = 0; else if (fc >= CM_COLS) fc = CM_COLS - 1;
+    if (fr < 0) fr = 0;
+    if (fr >= CM_ROWS) return 0;
+    return (s_cm[fr][fc] & CM_SOLID) != 0;
 }
 
 static int solid_at(int x, int y)
 {
     if (x < 0 || x >= ROOM_W) return 0;     /* borde lateral = salida, no sólido */
-    if (y < HUD_ROWS * 8) return 1;         /* HUD arriba = techo sólido */
-    if (y >= ROOM_H) return 1;              /* piso del mundo */
+    if (y < 0 || y >= ROOM_H) return 0;     /* arriba/abajo del todo = salida */
     int c = x / 8, r = y / 8;
-    int db = door_block(r, c);              /* puerta: cerrada=sólida, abierta=pasable */
-    if (db == 1) return 1;
-    if (db == -1) return 0;
-    if (block_solid(r, c)) return 1;        /* bloque empujable (pos actual) = sólido */
-    /* gráficos horneados que se blanquean (spawn de enemigo/bloque, llaves) NO
-     * son pared: la colisión debe verlos como AIRE para que coincida con lo dibujado */
-    if (enemy_spawn_cell(r, c) || block_spawn_cell(r, c) || key_cell(r, c) ||
-        item_cell(r, c)) return 0;
-    return tile_solid[ROOM_NT[g_room_idx][r][c]];
+    if (block_solid(r, c)) return 1;        /* bloque empujable (pos actual din.) */
+    return cm_solid(r - 4, c - 1);          /* TILEMAP REAL del ROM (0xE496) */
 }
 
-/* solidez del tile base (sin hooks de puerta/bloque actual) — para blocks_port.
- * También excluye los gráficos horneados blanqueados. */
+/* solidez del tile base en tiles de PANTALLA (sin el bloque dinámico) —
+ * la usa blocks_port para decidir a dónde puede moverse un bloque. */
 int actors_tile_solid(int sr, int sc)
 {
     if (sc < 0 || sc >= RT_COLS || sr < 0 || sr >= RT_ROWS) return 1;
-    if (enemy_spawn_cell(sr, sc) || block_spawn_cell(sr, sc) || key_cell(sr, sc) ||
-        item_cell(sr, sc)) return 0;
-    return tile_solid[ROOM_NT[g_room_idx][sr][sc]];
+    return cm_solid(sr - 4, sc - 1);
 }
 
 /* AABB del jugador: 16x16 = el BORDE del sprite real (no el centro).
@@ -123,12 +124,11 @@ static void spawn_player(int entry_edge)
     int best_c = -1, best_r = -1, best_d = 9999;
     for (int r = HUD_ROWS + 2; r < RT_ROWS - 1; r++) {
         for (int c = 1; c < RT_COLS - 2; c++) {
-            /* hueco de 2x2 tiles (el sprite es 16x16) con piso debajo */
-            int open_here  = !tile_solid[ROOM_NT[g_room_idx][r][c]] &&
-                             !tile_solid[ROOM_NT[g_room_idx][r][c + 1]];
-            int open_above = !tile_solid[ROOM_NT[g_room_idx][r - 1][c]] &&
-                             !tile_solid[ROOM_NT[g_room_idx][r - 1][c + 1]];
-            int floor_blw  =  tile_solid[ROOM_NT[g_room_idx][r + 1][c]];
+            /* hueco de 2x2 tiles (el sprite es 16x16) con piso debajo,
+             * según el TILEMAP REAL (cm_solid trabaja en coords de campo) */
+            int open_here  = !cm_solid(r - 4, c - 1) && !cm_solid(r - 4, c);
+            int open_above = !cm_solid(r - 5, c - 1) && !cm_solid(r - 5, c);
+            int floor_blw  =  cm_solid(r - 3, c - 1);
             if (open_here && open_above && floor_blw) {
                 int d = (c - want_col) * (c - want_col) - r;  /* cerca de col, prefiere filas bajas */
                 if (d < best_d) { best_d = d; best_c = c; best_r = r; }
@@ -147,9 +147,18 @@ static void spawn_player(int entry_edge)
 
 void actors_init_room(unsigned char room, int entry_edge)
 {
-    if (!solid_ready) compute_solid();
     int ry = room >> 4, rx = room & 0x0F;
     g_room_idx = ry * 10 + rx;
+
+    /* Cargar el TILEMAP DE COLISIÓN REAL de la sala (copia de trabajo).
+     * Las celdas 0xA8 (bloques empujables) se limpian: los bloques se simulan
+     * dinámicos (block_solid) y se mueven; el resto queda tal cual el ROM.
+     * Las puertas (A0/A2) quedan sólidas; doors_room_init limpia las abiertas. */
+    for (int r = 0; r < CM_ROWS; r++)
+        for (int c = 0; c < CM_COLS; c++) {
+            uint8_t v = COLMAP[g_room_idx][r][c];
+            s_cm[r][c] = (v == CM_BLOCK) ? 0 : v;
+        }
 
     /* Al CRUZAR de sala se CONSERVA la coordenada perpendicular al borde
      * (salís por una puerta a media altura -> entrás a la misma altura, no en
@@ -184,25 +193,8 @@ void actors_init_room(unsigned char room, int entry_edge)
     }
     g_player_invuln = 80;   /* gracia al entrar (el spawn puede caer cerca de un enemigo) */
 
-    /* Los enemigos REALES ya están dibujados en la geometría (VRAM del ROM).
-     * No spawneamos los de maqueta para no duplicar. El movimiento real es la
-     * capa de comportamiento pendiente (port de enemies.c validado vs RAM). */
+    /* Los enemigos reales los maneja enemies_port (path-replay del ROM). */
     g_enemy_n = 0;
-    if (0) for (int c = 4; c < RT_COLS - 3 && g_enemy_n < MAX_ENEMIES; c += 7) {
-        int ex = c * 8;
-        /* buscar fila abierta con piso debajo */
-        for (int r = HUD_ROWS; r < RT_ROWS - 2; r++) {
-            int t  = ROOM_NT[g_room_idx][r][c];
-            int tb = ROOM_NT[g_room_idx][r + 1][c];
-            if (!tile_solid[t] && tile_solid[tb]) {
-                g_enemy_px[g_enemy_n] = ex;
-                g_enemy_py[g_enemy_n] = r * 8 + 2;
-                g_enemy_dir[g_enemy_n] = (g_enemy_n & 1) ? 1 : -1;
-                g_enemy_n++;
-                break;
-            }
-        }
-    }
 }
 
 /* Devuelve el borde de salida (0=ninguno,1=arriba,3=der,5=abajo,7=izq).
