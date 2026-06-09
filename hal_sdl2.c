@@ -758,7 +758,7 @@ void draw_enemies(int OX, int OY);
 void draw_actors(int OX, int OY)
 {
     /* Sprite real del jugador (16x16) extraido del ROM. El AABB de fisica es
-     * 8x14; centramos el sprite horizontalmente (-4) y alineamos los pies (-2). */
+     * 16x16 = el borde del sprite: se dibuja en (px,py) sin offset. */
     int frame;
     if (g_player_air) {
         frame = (g_player_face == 1) ? PLF_JUMP_R : PLF_JUMP_L;
@@ -772,7 +772,7 @@ void draw_actors(int OX, int OY)
     }
     /* mientras es invulnerable tras un golpe, parpadea (se salta frames pares) */
     if (!(g_player_invuln > 0 && (g_player_invuln & 4)))
-        blit_player_frame(OX + g_player_px - 4, OY + g_player_py - 2, frame);
+        blit_player_frame(OX + g_player_px, OY + g_player_py, frame);
 
     draw_enemies(OX, OY);
 }

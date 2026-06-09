@@ -319,9 +319,9 @@ void faithful_play(uint8_t start_room)
 
         int edge = actors_update(left, right, up);
         enemies_step();
-        keys_update(g_player_px, g_player_py, 8, 14);
-        items_update(g_player_px, g_player_py, 8, 14);
-        doors_update(g_player_px, g_player_py, 8, 14);
+        keys_update(g_player_px, g_player_py, 16, 16);
+        items_update(g_player_px, g_player_py, 16, 16);
+        doors_update(g_player_px, g_player_py, 16, 16);
         blocks_step();
         if (edge) {
             uint8_t hi = room >> 4, lo = room & 0x0Fu;
@@ -444,9 +444,9 @@ int main(int argc, char *argv[])
                     }
                     actors_update(left, right, up);
                     enemies_step();
-                    keys_update(g_player_px, g_player_py, 8, 14);
-                    items_update(g_player_px, g_player_py, 8, 14);
-                    doors_update(g_player_px, g_player_py, 8, 14);
+                    keys_update(g_player_px, g_player_py, 16, 16);
+                    items_update(g_player_px, g_player_py, 16, 16);
+                    doors_update(g_player_px, g_player_py, 16, 16);
                     blocks_step();
                     if (getenv("CASTLE_DOORTEST") && f == 25) {
                         doors_room_init(room);   /* simula salir y volver a la sala */

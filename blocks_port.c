@@ -67,8 +67,8 @@ int blocks_push(int player_px, int player_py, int ph, int dir)
 {
     static int gate = 0;
     if (dir == 0) return 0;
-    /* tile líder del jugador en la dirección de empuje */
-    int lead = (dir > 0) ? (player_px + 8) / 8 : (player_px - 1) / 8;
+    /* tile líder del jugador en la dirección de empuje (caja 16 de ancho) */
+    int lead = (dir > 0) ? (player_px + 16) / 8 : (player_px - 1) / 8;
     int r0 = player_py / 8, r1 = (player_py + ph - 1) / 8;
     for (int i = 0; i < g_block_n; i++) {
         Block *b = &g_block[i];

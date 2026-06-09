@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-06-09 (2) — Edge-based hitbox (16x16) + room transitions preserve position
+
+### Fixed (user-reported)
+- **Hitbox = sprite borders**: player physics box was 8x14 CENTERED inside the
+  16x16 sprite (drawn at px-4,py-2) — collisions referenced the "center", the
+  sprite visually overlapped walls/floors by 4px, and the player could wedge into
+  1-tile gaps where the sprite didn't fit ("stuck mid-map" after some jumps).
+  Now PW/PH = 16x16 = the sprite edge, drawn at (px,py) with no offset; probes
+  keep 1px inset per side so exact 2-tile (16px) passages don't snag. Applies to
+  walls/platforms, doors (blocks flush at the door edge), enemy contact (full
+  16x16 boxes), keys/items/doors AABBs (16,16), block pushing (lead = px+16), and
+  spawn search (needs a 2x2-tile hole now).
+- **Room transitions preserve position**: crossing an edge now KEEPS the
+  coordinate perpendicular to it (exit through a mid-height side door → enter the
+  next room at the SAME height; falling/jumping through top/bottom keeps the
+  column). Before, spawn_player()'s heuristic picked "the best standable cell",
+  often teleporting the player to a different door (e.g., the one previously used
+  to enter). Heuristic now only used for initial spawn / after damage; if the
+  entry point lands in solid, short same-axis nudges (±4..32px) then fallback.
+  In-flight jump arcs continue across rooms.
+
+### Verified (harness)
+- Door blocks flush at sprite edge without key (px+15 == door edge), opens+
+  consumes with key, walk-through after. Block push (15→17) and item pickup
+  walkthrough still work. Feet rest exactly on floor line.
+
 ## 2026-06-09 — Twin doors across rooms + collectible items (0xE3D6)
 
 ### Fixed (user-reported)

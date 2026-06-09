@@ -90,9 +90,11 @@ int actors_tile_solid(int sr, int sc)
     return tile_solid[ROOM_NT[g_room_idx][sr][sc]];
 }
 
-/* AABB del jugador: 8 ancho x 14 alto */
-#define PW 8
-#define PH 14
+/* AABB del jugador: 16x16 = el BORDE del sprite real (no el centro).
+ * Los probes usan 1px de margen por lado para no engancharse en pasajes
+ * de exactamente 2 tiles (16px). */
+#define PW 16
+#define PH 16
 static int box_solid(int x, int y)
 {
     return solid_at(x + 1, y) || solid_at(x + PW - 2, y) ||
@@ -120,9 +122,12 @@ static void spawn_player(int entry_edge)
      * cornisa pegada al HUD (filas altas). */
     int best_c = -1, best_r = -1, best_d = 9999;
     for (int r = HUD_ROWS + 2; r < RT_ROWS - 1; r++) {
-        for (int c = 1; c < RT_COLS - 1; c++) {
-            int open_here  = !tile_solid[ROOM_NT[g_room_idx][r][c]];
-            int open_above = !tile_solid[ROOM_NT[g_room_idx][r - 1][c]];
+        for (int c = 1; c < RT_COLS - 2; c++) {
+            /* hueco de 2x2 tiles (el sprite es 16x16) con piso debajo */
+            int open_here  = !tile_solid[ROOM_NT[g_room_idx][r][c]] &&
+                             !tile_solid[ROOM_NT[g_room_idx][r][c + 1]];
+            int open_above = !tile_solid[ROOM_NT[g_room_idx][r - 1][c]] &&
+                             !tile_solid[ROOM_NT[g_room_idx][r - 1][c + 1]];
             int floor_blw  =  tile_solid[ROOM_NT[g_room_idx][r + 1][c]];
             if (open_here && open_above && floor_blw) {
                 int d = (c - want_col) * (c - want_col) - r;  /* cerca de col, prefiere filas bajas */
@@ -145,7 +150,38 @@ void actors_init_room(unsigned char room, int entry_edge)
     if (!solid_ready) compute_solid();
     int ry = room >> 4, rx = room & 0x0F;
     g_room_idx = ry * 10 + rx;
-    spawn_player(entry_edge);
+
+    /* Al CRUZAR de sala se CONSERVA la coordenada perpendicular al borde
+     * (salís por una puerta a media altura -> entrás a la misma altura, no en
+     * cualquier otra puerta). Sólo el spawn inicial / tras un golpe usa la
+     * heurística de spawn_player. */
+    if (entry_edge == 3) {                       /* entró desde la izquierda */
+        g_player_px = 1;                         /* py se conserva */
+    } else if (entry_edge == 7) {                /* entró desde la derecha */
+        g_player_px = ROOM_W - PW - 1;
+    } else if (entry_edge == 5) {                /* entró desde arriba (cayó) */
+        g_player_py = HUD_ROWS * 8 + 1;          /* px se conserva */
+    } else if (entry_edge == 1) {                /* entró desde abajo (saltó) */
+        g_player_py = ROOM_H - PH - 1;
+    } else {
+        spawn_player(0);
+    }
+    if (entry_edge) {
+        /* destrabar si el punto de entrada cae en sólido: corrimientos cortos
+         * sobre el mismo eje; si no hay caso, heurística vieja como fallback */
+        if (box_solid(g_player_px, g_player_py)) {
+            int lateral = (entry_edge == 3 || entry_edge == 7);
+            int fixed = 0;
+            for (int d = 4; d <= 32 && !fixed; d += 4) {
+                int x1 = g_player_px - (lateral ? 0 : d), y1 = g_player_py - (lateral ? d : 0);
+                int x2 = g_player_px + (lateral ? 0 : d), y2 = g_player_py + (lateral ? d : 0);
+                if      (!box_solid(x1, y1)) { g_player_px = x1; g_player_py = y1; fixed = 1; }
+                else if (!box_solid(x2, y2)) { g_player_px = x2; g_player_py = y2; fixed = 1; }
+            }
+            if (!fixed) spawn_player(entry_edge);
+        }
+        p_jump_prev = 0;   /* el arco de salto en curso continúa en la sala nueva */
+    }
     g_player_invuln = 80;   /* gracia al entrar (el spawn puede caer cerca de un enemigo) */
 
     /* Los enemigos REALES ya están dibujados en la geometría (VRAM del ROM).
