@@ -686,27 +686,11 @@ game_start:
     intro_cleanup();
     g_intro_active = 0u;
 
-    game_reset_level();
+    /* JUEGO FIEL: tras la intro entramos al gameplay portado desde el ROM real
+     * (render de la VRAM, jugador/enemigos/llaves/puertas). Reemplaza el viejo
+     * game_frame() esqueleto. Corre hasta que se cierra la ventana. */
     music_play_game();
-    enemies_init();
-    particles_init();
-    doors_init();
-
-    g_game_over  = 0;
-    g_room_exit  = 0;
-    g_state_flags = 0;
-
-    /* Game loop hasta game over (sub_4064 ejecutado por frame) */
-    while (!g_game_over) {
-        game_frame();
-        tiles_animate(g_state_flags);
-        hal_wait_vsync();
-
-        if (!hal_poll_events()) goto exit;
-    }
-
-    /* Game over: pausa breve */
-    hal_delay(120);
+    faithful_play(0x70u);
 
 exit:
     /* sub_4AC8: salida limpia */

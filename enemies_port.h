@@ -30,5 +30,6 @@ extern int       g_room_air;   /* tile de fondo del cuarto (blanqueo de horneado
 
 void enemies_room_init(unsigned char room);
 void enemies_step(void);
+int  enemy_spawn_cell(int srow, int scol);   /* 1 si la celda es spawn horneado de enemigo */
 
 #endif

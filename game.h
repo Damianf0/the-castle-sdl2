@@ -161,3 +161,7 @@ extern uint8_t g_keyframe_queue[9];
 
 /* --- title.c --- */
 void title_screen(void);
+
+/* --- main.c: juego fiel (render VRAM real + actores/llaves/puertas/enemigos).
+ * Corre hasta que se cierra la ventana. start_room en hex (0x70 = arranque). */
+void faithful_play(uint8_t start_room);

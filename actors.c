@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include "actors.h"
 #include "map_real.h"
+#include "enemies_port.h"
+#include "doors_port.h"
+#include "blocks_port.h"
+#include "keys_port.h"
 
 /* Geometría = VRAM real del ROM: 32x24 tiles, HUD en las filas 0..2. */
 #define ROOM_W (RT_COLS * 8)   /* 256 */
@@ -17,6 +21,8 @@
 int g_player_px, g_player_py, g_player_face = 1;
 int g_player_anim;
 int g_player_moving;
+int g_player_lives = 4;     /* vidas (los corazones del HUD) */
+int g_player_invuln = 0;    /* frames de invulnerabilidad/parpadeo tras un golpe */
 int g_enemy_n;
 int g_enemy_px[MAX_ENEMIES], g_enemy_py[MAX_ENEMIES], g_enemy_dir[MAX_ENEMIES];
 
@@ -62,7 +68,23 @@ static int solid_at(int x, int y)
     if (y < HUD_ROWS * 8) return 1;         /* HUD arriba = techo sólido */
     if (y >= ROOM_H) return 1;              /* piso del mundo */
     int c = x / 8, r = y / 8;
+    int db = door_block(r, c);              /* puerta: cerrada=sólida, abierta=pasable */
+    if (db == 1) return 1;
+    if (db == -1) return 0;
+    if (block_solid(r, c)) return 1;        /* bloque empujable (pos actual) = sólido */
+    /* gráficos horneados que se blanquean (spawn de enemigo/bloque, llaves) NO
+     * son pared: la colisión debe verlos como AIRE para que coincida con lo dibujado */
+    if (enemy_spawn_cell(r, c) || block_spawn_cell(r, c) || key_cell(r, c)) return 0;
     return tile_solid[ROOM_NT[g_room_idx][r][c]];
+}
+
+/* solidez del tile base (sin hooks de puerta/bloque actual) — para blocks_port.
+ * También excluye los gráficos horneados blanqueados. */
+int actors_tile_solid(int sr, int sc)
+{
+    if (sc < 0 || sc >= RT_COLS || sr < 0 || sr >= RT_ROWS) return 1;
+    if (enemy_spawn_cell(sr, sc) || block_spawn_cell(sr, sc) || key_cell(sr, sc)) return 0;
+    return tile_solid[ROOM_NT[g_room_idx][sr][sc]];
 }
 
 /* AABB del jugador: 8 ancho x 14 alto */
@@ -83,13 +105,9 @@ static int floor_below(int x, int y0)
     return ROOM_H - PH - 1;
 }
 
-void actors_init_room(unsigned char room, int entry_edge)
+/* Coloca al jugador en una celda parable cerca del borde de entrada. */
+static void spawn_player(int entry_edge)
 {
-    if (!solid_ready) compute_solid();
-    int ry = room >> 4, rx = room & 0x0F;
-    g_room_idx = ry * 10 + rx;
-
-    /* columna deseada de entrada según el borde por el que entró */
     int want_col = (RT_COLS / 2);
     if      (entry_edge == 7) want_col = RT_COLS - 3;  /* entró por la derecha */
     else if (entry_edge == 3) want_col = 2;
@@ -117,6 +135,15 @@ void actors_init_room(unsigned char room, int entry_edge)
         g_player_py = HUD_ROWS * 8;
     }
     g_player_air = 0; p_phase = 0; p_rise_left = 0; p_hover_left = 0; p_jump_prev = 0;
+}
+
+void actors_init_room(unsigned char room, int entry_edge)
+{
+    if (!solid_ready) compute_solid();
+    int ry = room >> 4, rx = room & 0x0F;
+    g_room_idx = ry * 10 + rx;
+    spawn_player(entry_edge);
+    g_player_invuln = 80;   /* gracia al entrar (el spawn puede caer cerca de un enemigo) */
 
     /* Los enemigos REALES ya están dibujados en la geometría (VRAM del ROM).
      * No spawneamos los de maqueta para no duplicar. El movimiento real es la
@@ -154,10 +181,15 @@ int actors_update(int left, int right, int jump)
     int dir = (right ? 1 : 0) - (left ? 1 : 0);
     if (dir) {
         g_player_face = (dir > 0) ? 1 : 0;
+        int moved = 0;
         for (int i = 0; i < g_hspeed; i++) {
             int nx = g_player_px + dir;
             if (box_solid(nx, g_player_py)) break;
-            g_player_px = nx; g_player_moving = 1;
+            g_player_px = nx; g_player_moving = 1; moved = 1;
+        }
+        /* si quedó trabado contra un bloque, intentar empujarlo */
+        if (!moved) {
+            if (blocks_push(g_player_px, g_player_py, PH, dir)) g_player_moving = 1;
         }
         if (g_player_px < -2)               return 7;   /* salida izquierda */
         if (g_player_px > ROOM_W - PW + 2)  return 3;   /* salida derecha   */
@@ -207,16 +239,29 @@ int actors_update(int left, int right, int jump)
 
     if (g_player_moving) g_player_anim = (g_player_anim + 1) & 0x3F;
 
-    /* --- enemigos: patrullan horizontal, rebotan en pared o borde --- */
-    for (int e = 0; e < g_enemy_n; e++) {
-        int nx = g_enemy_px[e] + g_enemy_dir[e];
-        int fy = g_enemy_py[e] + PH;            /* pies */
-        if (nx < 4 || nx > ROOM_W - 10 ||
-            solid_at(nx + (g_enemy_dir[e] > 0 ? 7 : 0), g_enemy_py[e] + 6) ||
-            !solid_at(nx + 4, fy))              /* no caminar al vacío */
-            g_enemy_dir[e] = -g_enemy_dir[e];
-        else
-            g_enemy_px[e] = nx;
+    /* --- daño: tocar un enemigo cuesta una vida --- */
+    if (g_player_invuln > 0) {
+        g_player_invuln--;
+    } else {
+        /* AABB del jugador (un poco encogido para que sea justo) */
+        int plx = g_player_px + 1, ply = g_player_py + 1;
+        int prx = g_player_px + PW - 1, pry = g_player_py + PH - 1;
+        for (int e = 0; e < g_pen_n; e++) {
+            if (!g_pen[e].active) continue;
+            /* enemigo en pantalla: col=byte2+2, fila=byte3+4, 2x2 tiles (16x16),
+             * encogido 3px por lado */
+            int ex = (g_pen[e].row + 2) * 8 + 3;
+            int ey = (g_pen[e].col + 4) * 8 + 3;
+            int ex2 = ex + 16 - 6, ey2 = ey + 16 - 6;
+            if (plx < ex2 && prx > ex && ply < ey2 && pry > ey) {
+                /* GOLPE */
+                if (g_player_lives > 0) g_player_lives--;
+                else g_player_lives = 3;            /* viewer: reinicia el contador */
+                g_player_invuln = 90;               /* ~1.5s de parpadeo/invuln */
+                spawn_player(0);                    /* reaparece en el centro */
+                break;
+            }
+        }
     }
     return 0;
 }

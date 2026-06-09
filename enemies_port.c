@@ -108,3 +108,15 @@ void enemies_step(void)
         p->anim ^= 1;
     }
 }
+
+/* ¿(sr,sc) cae en el gráfico horneado de spawn de algún enemigo? (se blanquea
+ * en pantalla, así que para la colisión debe ser AIRE). */
+int enemy_spawn_cell(int sr, int sc)
+{
+    for (int i = 0; i < g_pen_n; i++) {
+        PortEnemy *p = &g_pen[i];
+        int r0 = p->sc + 4, c0 = p->sr + p->gox;
+        if (sr >= r0 && sr < r0 + 2 && sc >= c0 && sc < c0 + p->gw) return 1;
+    }
+    return 0;
+}

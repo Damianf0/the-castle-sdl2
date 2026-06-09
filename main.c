@@ -32,6 +32,9 @@
 #include "geom.h"
 #include "actors.h"
 #include "enemies_port.h"
+#include "keys_port.h"
+#include "doors_port.h"
+#include "blocks_port.h"
 #include "tiledata.h"
 #include "screen.h"
 
@@ -291,6 +294,52 @@ static void main_loop(void)
 }
 
 /* ==========================================================================
+ * JUEGO FIEL — render de la VRAM real + jugador/enemigos/llaves/puertas/bloques.
+ * Es el gameplay que antes sólo se alcanzaba con CASTLE_VIEW=1. Corre hasta que
+ * se cierra la ventana. Salir por los bordes cambia de sala.
+ * ========================================================================== */
+void faithful_play(uint8_t start_room)
+{
+    uint8_t room = start_room;
+    geom_decode_room(room);
+    actors_init_room(room, 0);
+    enemies_room_init(room);
+    keys_room_init(room);
+    doors_room_init(room);
+    blocks_room_init(room);
+    g_actors_on = 1;   /* activa el render de geometría real + actores */
+
+    while (hal_poll_events()) {
+        uint8_t dir = hal_joystick_read(0);
+        int left  = (dir == 6 || dir == 7 || dir == 8);
+        int right = (dir == 2 || dir == 3 || dir == 4);
+        int up    = (dir == 1 || dir == 2 || dir == 8) || hal_key_pressed();
+
+        int edge = actors_update(left, right, up);
+        enemies_step();
+        keys_update(g_player_px, g_player_py, 8, 14);
+        doors_update(g_player_px, g_player_py, 8, 14);
+        blocks_step();
+        if (edge) {
+            uint8_t hi = room >> 4, lo = room & 0x0Fu;
+            if      (edge == 1) hi = (hi == 0) ? 9 : hi - 1;
+            else if (edge == 5) hi = (hi == 9) ? 0 : hi + 1;
+            else if (edge == 3) lo = (lo == 9) ? 0 : lo + 1;
+            else if (edge == 7) lo = (lo == 0) ? 9 : lo - 1;
+            room = (uint8_t)((hi << 4) | lo);
+            geom_decode_room(room);
+            actors_init_room(room, edge);
+            enemies_room_init(room);
+            keys_room_init(room);
+            doors_room_init(room);
+            blocks_room_init(room);
+        }
+        hal_wait_vsync();
+    }
+    g_actors_on = 0;
+}
+
+/* ==========================================================================
  * ENTRY POINT
  * ========================================================================== */
 int main(int argc, char *argv[])
@@ -339,34 +388,7 @@ int main(int argc, char *argv[])
         uint8_t room = 0x70u;
         const char *rs = getenv("CASTLE_ROOM");
         if (rs) room = (uint8_t)strtol(rs, NULL, 16);
-        geom_decode_room(room);
-        actors_init_room(room, 0);
-        enemies_room_init(room);
-        g_actors_on = 1;
-        printf("VIEWER: flechas = mover, arriba = saltar, salir por los bordes "
-               "cambia de sala. Esc = salir. Sala 0x%02x\n", room);
-        while (hal_poll_events()) {
-            uint8_t dir = hal_joystick_read(0);
-            int left  = (dir == 6 || dir == 7 || dir == 8);
-            int right = (dir == 2 || dir == 3 || dir == 4);
-            int up    = (dir == 1 || dir == 2 || dir == 8) || hal_key_pressed();
-
-            int edge = actors_update(left, right, up);
-            enemies_step();
-            if (edge) {
-                uint8_t hi = room >> 4, lo = room & 0x0Fu;
-                if      (edge == 1) hi = (hi == 0) ? 9 : hi - 1;
-                else if (edge == 5) hi = (hi == 9) ? 0 : hi + 1;
-                else if (edge == 3) lo = (lo == 9) ? 0 : lo + 1;
-                else if (edge == 7) lo = (lo == 0) ? 9 : lo - 1;
-                room = (uint8_t)((hi << 4) | lo);
-                geom_decode_room(room);
-                actors_init_room(room, edge);
-                enemies_room_init(room);
-                printf("  sala 0x%02x  (%d objetos)\n", room, g_geom_object_count);
-            }
-            hal_wait_vsync();
-        }
+        faithful_play(room);
         hal_quit();
         free(rom_buf);
         return 0;
@@ -385,6 +407,9 @@ int main(int argc, char *argv[])
                 /* captura animada: simula frames con jugador+enemigos y guarda secuencia */
                 actors_init_room(room, 0);
                 enemies_room_init(room);
+                keys_room_init(room);
+                doors_room_init(room);
+                blocks_room_init(room);
                 g_actors_on = 1;
                 int nframes = 40;
                 const char *nf = getenv("CASTLE_FRAMES");
@@ -394,20 +419,31 @@ int main(int argc, char *argv[])
                 const char *opx = getenv("CASTLE_PX"), *opy = getenv("CASTLE_PY");
                 if (opx) g_player_px = atoi(opx);
                 if (opy) g_player_py = atoi(opy);
+                if (getenv("CASTLE_GIVEKEYS"))
+                    for (int c = 0; c < KEY_COLORS; c++) g_key_inv[c] = 9;
                 for (int f = 0; f < nframes; f++) {
                     int right = jhold ? 0 : (f > 8 && f < 28);
                     int up    = jhold ? (f >= 5 && f < 5 + jhold) : (f == 14 || f == 22);
                     actors_update(0, right, up);
                     enemies_step();
+                    keys_update(g_player_px, g_player_py, 8, 14);
+                    doors_update(g_player_px, g_player_py, 8, 14);
+                    blocks_step();
+                    if (getenv("CASTLE_DOORTEST") && f == 25) {
+                        doors_room_init(room);   /* simula salir y volver a la sala */
+                        printf(">>> re-init sala (simula volver)\n");
+                    }
                     hal_vdp_present();
                     char p[256];
                     snprintf(p, sizeof(p), "%s_%02d.bmp", shot, f);
                     hal_screenshot(p);
                     if (jt) printf("f%02d py=%d air=%d\n", f, g_player_py, g_player_air);
                     if (getenv("CASTLE_ENEMYDBG")) {
-                        printf("f%02d", f);
+                        printf("f%02d lives=%d inv[%d,%d,%d,%d] px=%d py=%d doors:", f, g_player_lives, g_key_inv[0],g_key_inv[1],g_key_inv[2],g_key_inv[3], g_player_px, g_player_py);
+                        for (int dd = 0; dd < g_door_n; dd++) printf("[c%d cnt%d %s]", g_door[dd].color, g_door[dd].count, g_door[dd].open?"OPEN":"shut");
+                        printf(" blk:"); for (int bb = 0; bb < g_block_n; bb++) printf("(%d,%d)", g_block[bb].scol, g_block[bb].srow);
                         for (int e = 0; e < g_pen_n; e++)
-                            printf(" | t%02X r%d c%d f%d", g_pen[e].type, g_pen[e].row, g_pen[e].col, g_pen[e].flags);
+                            printf(" | t%02X r%d c%d", g_pen[e].type, g_pen[e].row, g_pen[e].col);
                         printf("\n");
                     }
                 }

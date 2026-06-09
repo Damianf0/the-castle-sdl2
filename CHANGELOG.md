@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-06-08 — exe boots intro → faithful game (no more launcher .bat needed)
+
+### Changed
+- `main()` default path now plays the **intro** and, on key press, enters the
+  **faithful gameplay** directly. Before, the playable/faithful build was gated
+  behind `CASTLE_VIEW=1` (set by `Jugar.bat`); the default path ran the
+  incomplete skeleton `game_frame()` loop.
+- Extracted the viewer gameplay loop into `faithful_play(uint8_t start_room)`
+  (`main.c`, declared in `game.h`). `CASTLE_VIEW` now just calls it too.
+- `title.c` `game_start:` now calls `faithful_play(0x70)` instead of the skeleton
+  `while(!g_game_over){game_frame();}` loop.
+- `hal_vdp_present()`: faithful geometry render (`debug_draw_geom`) now triggers on
+  `g_actors_on` (during faithful play) OR `CASTLE_GEOMDBG=1` — so the screenshot
+  ACTORS mode and the in-game render no longer need the env var.
+- `Jugar.bat` / `LEEME.txt`: updated — double-clicking `the_castle.exe` is enough;
+  the .bat is now optional (speed tuning / skip-intro dev mode).
+
+## 2026-06-08 — Keys & doors converted from real ROM tables (not shape-detection)
+
+### Changed
+- **Keys** now come from RAM table `0xE3D6` (dispatcher `sub_5BB0` @0x5BB0):
+  `val >= 0x2A` ⇒ key, color = `val - 0x2A`. → `keys_data.c` (156 keys / 64 rooms).
+- **Doors/gates** now come from RAM table `0xE346` (open routine `sub_758C` @0x758C,
+  located via `sub_4325` → `0xE6EE` index): required color = `(val & 0x0F) - 1`,
+  consumes exactly 1 key. → `doors_data.c` (259 gates / 98 rooms).
+- Confirmed `0xE43E` (stride 5) = stairs/ramps, NOT doors.
+- Screen mapping for both = `(col+1, row+4)` (same as player `sub_6F4D`).
+- Shared color space key⟷door (both index `0xE337`): 0=blue 2=magenta 3=green
+  4=cyan 5=yellow (`KEY_COLMSX = {4,6,13,2,7,10}`).
+
+### Added
+- `cap_e346.tcl`, `cap_e43e.tcl` — openMSX table dumpers (→ `eXXX_YY.bin`).
+- `gen_keys_data.py`, `gen_doors_data.py` — reproducible C-table generators.
+- `KEY_BMP[16]` synthetic key sprite (baked name table is inconsistent across rooms).
+- Docs: `DEVLOG_llaves_puertas.md`, `ASSETS_llaves_puertas.md`.
+
+### Removed (superseded)
+- Shape/map-image detection of keys/doors (was "guessing"; wrong colors/counts).
+
 ## 2026-06-03 — Identified sub_6EE1 as sprite-setter, not name-table write
 
 ### Fixed

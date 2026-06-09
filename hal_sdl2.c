@@ -20,6 +20,9 @@
 #include "actors.h"
 #include "player_sprite.h"
 #include "enemies_port.h"
+#include "keys_port.h"
+#include "doors_port.h"
+#include "blocks_port.h"
 #include "screen.h"
 
 int g_actors_on = 0;   /* el viewer lo activa para dibujar jugador+enemigos */
@@ -590,7 +593,7 @@ static void debug_draw_geom(void)
     static unsigned short nt[RT_ROWS][RT_COLS];
     for (int r = 0; r < RT_ROWS; r++)
         for (int c = 0; c < RT_COLS; c++) nt[r][c] = ROOM_NT[idx][r][c];
-    if (g_actors_on)
+    if (g_actors_on) {
         for (int i = 0; i < g_pen_n; i++) {
             PortEnemy *p = &g_pen[i];
             for (int dr = 0; dr < 2; dr++)
@@ -600,6 +603,38 @@ static void debug_draw_geom(void)
                         nt[rr][cc] = (unsigned short)g_room_air;
                 }
         }
+        /* llaves: blanquear SIEMPRE el horneado (el name table es inconsistente
+         * entre salas); las activas se redibujan sintéticas más abajo */
+        for (int i = 0; i < g_pkey_n; i++) {
+            for (int dr = 0; dr < g_pkey[i].sh; dr++)
+                for (int dc = 0; dc < g_pkey[i].sw; dc++) {
+                    int rr = g_pkey[i].srow + dr, cc = g_pkey[i].scol + dc;
+                    if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
+                        nt[rr][cc] = (unsigned short)g_room_air;
+                }
+        }
+        /* puertas ABIERTAS: blanquear su gráfico (quedan transitables) */
+        for (int i = 0; i < g_door_n; i++) {
+            if (!g_door[i].open) continue;
+            for (int dr = 0; dr < g_door[i].dh; dr++)
+                for (int dc = 0; dc < g_door[i].dw; dc++) {
+                    int rr = g_door[i].drow + dr, cc = g_door[i].dcol + dc;
+                    if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
+                        nt[rr][cc] = (unsigned short)g_room_air;
+                }
+        }
+        /* bloques empujables: blanquear el horneado del spawn (se redibujan en
+         * su posición actual en draw_enemies/abajo) */
+        for (int i = 0; i < g_block_n; i++) {
+            if (!g_block[i].active) continue;
+            for (int dr = 0; dr < 2; dr++)
+                for (int dc = 0; dc < 2; dc++) {
+                    int rr = g_block[i].sr0 + dr, cc = g_block[i].sc0 + dc;
+                    if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
+                        nt[rr][cc] = (unsigned short)g_room_air;
+                }
+        }
+    }
 
     for (int r = 0; r < RT_ROWS; r++) {
         for (int c = 0; c < RT_COLS; c++) {
@@ -617,7 +652,64 @@ static void debug_draw_geom(void)
         }
     }
 
-    if (g_actors_on) { void draw_actors(int,int); draw_actors(0, 0); }
+    if (g_actors_on) {
+        /* llaves activas: dibujar la llave 16x16 (forma real del ROM) en su
+         * color lógico. Posición = (scol,srow)*8, igual que la colisión. */
+        for (int i = 0; i < g_pkey_n; i++) {
+            if (!g_pkey[i].active) continue;
+            uint8_t mc = KEY_COLMSX[g_pkey[i].color < KEY_COLORS ? g_pkey[i].color : 0];
+            uint32_t kc = g_palette[mc];
+            int kx = g_pkey[i].scol * 8, ky = g_pkey[i].srow * 8;
+            for (int yy = 0; yy < 16; yy++) {
+                int y = ky + yy; if (y < 0 || y >= MSX_H) continue;
+                uint16_t bits = KEY_BMP[yy];
+                for (int b = 0; b < 16; b++) {
+                    if (!(bits & (0x8000u >> b))) continue;
+                    int x = kx + b; if (x < 0 || x >= MSX_W) continue;
+                    framebuf[y * MSX_W + x] = kc;
+                }
+            }
+        }
+        /* bloques empujables: dibujar su gráfico 2x2 en la posición actual */
+        for (int i = 0; i < g_block_n; i++) {
+            if (!g_block[i].active) continue;
+            for (int dr = 0; dr < 2; dr++)
+                for (int dc = 0; dc < 2; dc++) {
+                    const unsigned char *t = RT_TILES[g_block[i].gfx[dr * 2 + dc]];
+                    int bx = (g_block[i].scol + dc) * 8, by = (g_block[i].srow + dr) * 8;
+                    for (int yy = 0; yy < 8; yy++) {
+                        int y = by + yy; if (y < 0 || y >= MSX_H) continue;
+                        uint8_t pat = t[yy], col = t[8 + yy];
+                        uint8_t fg = col >> 4, bg = col & 0x0F;
+                        for (int xx = 0; xx < 8; xx++) {
+                            int x = bx + xx; if (x < 0 || x >= MSX_W) continue;
+                            framebuf[y * MSX_W + x] = g_palette[(pat & (0x80u >> xx)) ? fg : bg];
+                        }
+                    }
+                }
+        }
+        void draw_actors(int,int); draw_actors(0, 0);
+        /* HUD: inventario de llaves recogidas (un ícono de LLAVE por llave, por color) */
+        static const uint8_t KEYICON[10] = {
+            0x3C,0x42,0x42,0x3C,0x18,0x18,0x18,0x1E,0x1A,0x1E };
+        int hx = 56, hy = 16;
+        for (int ci = 0; ci < KEY_COLORS; ci++) {
+            for (int k = 0; k < g_key_inv[ci]; k++) {
+                uint32_t c = g_palette[g_key_color[ci] ? g_key_color[ci] : 15];
+                for (int yy = 0; yy < 10; yy++) {
+                    int y = hy + yy; if (y < 0 || y >= MSX_H) continue;
+                    uint8_t bits = KEYICON[yy];
+                    for (int b = 0; b < 8; b++) {
+                        if (!(bits & (0x80u >> b))) continue;
+                        int x = hx + b; if (x < 0 || x >= MSX_W) continue;
+                        framebuf[y * MSX_W + x] = c;
+                    }
+                }
+                hx += 9;
+                if (hx > MSX_W - 10) { hx = 56; hy += 11; }   /* envolver fila */
+            }
+        }
+    }
 }
 
 /* dibuja un sprite 8xN desde un bitmap de filas (bit alto = col 0) */
@@ -667,7 +759,9 @@ void draw_actors(int OX, int OY)
     } else {
         frame = ((g_player_anim >> 2) & 1) ? PLF_WALK_L1 : PLF_WALK_L0;
     }
-    blit_player_frame(OX + g_player_px - 4, OY + g_player_py - 2, frame);
+    /* mientras es invulnerable tras un golpe, parpadea (se salta frames pares) */
+    if (!(g_player_invuln > 0 && (g_player_invuln & 4)))
+        blit_player_frame(OX + g_player_px - 4, OY + g_player_py - 2, frame);
 
     draw_enemies(OX, OY);
 }
@@ -720,7 +814,9 @@ void hal_vdp_present(void)
 {
     vdp_render();
 
-    if (getenv("CASTLE_GEOMDBG")) debug_draw_geom();
+    /* render fiel de geometría + actores: activo durante el juego fiel
+     * (g_actors_on) o forzado con CASTLE_GEOMDBG=1 */
+    if (g_actors_on || getenv("CASTLE_GEOMDBG")) debug_draw_geom();
 
     /* Subir framebuffer a la textura SDL */
     SDL_UpdateTexture(texture, NULL, framebuf, MSX_W * (int)sizeof(uint32_t));
