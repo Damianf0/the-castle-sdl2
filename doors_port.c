@@ -45,8 +45,36 @@ int door_block(int srow, int scol)
     return 0;
 }
 
+/* Las puertas de BORDE son pasajes entre salas: la misma puerta física existe
+ * en las dos salas contiguas (col0/col28 lateral, row0/row17 vertical). Al abrir
+ * una, hay que abrir su GEMELA en la sala vecina para que al pasar quede abierta
+ * (si no, aparecés contra una puerta cerrada y hay que saltarla). El grid de
+ * salas envuelve igual que la navegación del viewer. */
+static void open_twin(int idx, const RoomDoor *p)
+{
+    int ry = idx / 10, rx = idx % 10;
+    int nidx = -1, want_lat = 0;   /* lateral: matchear drow; vertical: dcol */
+    int want_lo = 0, want_hi = 0;  /* rango de dcol (lat) o drow (vert) gemelo */
+    if (p->dcol >= 28)     { nidx = ry * 10 + (rx == 9 ? 0 : rx + 1); want_lat = 1; want_lo = 0;  want_hi = 2;  }
+    else if (p->dcol <= 2) { nidx = ry * 10 + (rx == 0 ? 9 : rx - 1); want_lat = 1; want_lo = 28; want_hi = 31; }
+    else if (p->drow >= 20){ nidx = (ry == 9 ? 0 : ry + 1) * 10 + rx; want_lat = 0; want_lo = 0;  want_hi = 6;  }
+    else if (p->drow <= 6) { nidx = (ry == 0 ? 9 : ry - 1) * 10 + rx; want_lat = 0; want_lo = 19; want_hi = 23; }
+    if (nidx < 0) return;          /* puerta interior: no tiene gemela */
+    int n = DOOR_COUNT[nidx];
+    for (int j = 0; j < n && j < ROOMDOOR_MAX; j++) {
+        const DoorDef *d = &DOOR_DATA[nidx][j];
+        int pos   = want_lat ? d->dcol : d->drow;   /* lado del borde gemelo */
+        int align = want_lat ? d->drow : d->dcol;   /* alineación transversal */
+        int palign= want_lat ? p->drow : p->dcol;
+        if (pos >= want_lo && pos <= want_hi && align >= palign - 1 && align <= palign + 1) {
+            s_dopen[nidx][j] = 1;
+            break;
+        }
+    }
+}
+
 /* Al tocar (o presionar contra) una puerta cerrada con las llaves requeridas,
- * la abre y descuenta las llaves del inventario. */
+ * la abre (y su gemela en la sala vecina) y descuenta las llaves. */
 void doors_update(int px, int py, int pw, int ph)
 {
     for (int i = 0; i < g_door_n; i++) {
@@ -60,6 +88,7 @@ void doors_update(int px, int py, int pw, int ph)
                 g_key_inv[c] -= p->count;
                 p->open = 1;
                 s_dopen[s_didx][i] = 1;   /* persiste: queda abierta */
+                open_twin(s_didx, p);     /* y abre la gemela de la sala vecina */
             }
         }
     }

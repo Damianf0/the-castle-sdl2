@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-06-09 — Twin doors across rooms + collectible items (0xE3D6)
+
+### Fixed (user-reported)
+- **Twin-door pairing**: edge gates (col0/col28, row0/row17) are the SAME physical
+  door in two adjacent rooms. Opening one now also opens its twin in the neighbor
+  room (`open_twin()` in doors_port.c, lateral match by drow ±1, vertical by dcol ±1,
+  grid wraps like the viewer). Before, passing through an open door landed you
+  against/on the closed twin — perceived as a phantom collision area to jump over.
+  Verified: opening room70's (29,15) gate marks room71's (1,15) twin OPEN.
+- **Items are now collectible** (were solid baked obstacles you had to jump):
+  0xE3D6 vals 0x22-0x29 (map/power-ups/food/treasure per dispatcher `sub_5BB0`)
+  → `items_data.c` (256 items / 70 rooms, gen_items_data.py), `items_port.c/.h`:
+  collected on touch (AABB), vanish (blanked), persist collected, NEVER solid
+  (item_cell exclusion in actors solid_at / actors_tile_solid).
+  TODO: faithful effects (score for 0x27-29, map reveal for 0x22, power-ups).
+- Verified blocks' spawn exclusion was already correct (push & return repro: no
+  phantom at the old position in room 0x70).
+
+### Added
+- Harness: `CASTLE_MOVES` (per-frame movement script: R/L/U/D/A/.) and
+  `CASTLE_DOORROOM=XX` (swap door set at f25 to inspect a neighbor room's doors).
+
 ## 2026-06-08 — exe boots intro → faithful game (no more launcher .bat needed)
 
 ### Changed

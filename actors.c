@@ -11,6 +11,7 @@
 #include "doors_port.h"
 #include "blocks_port.h"
 #include "keys_port.h"
+#include "items_port.h"
 
 /* Geometría = VRAM real del ROM: 32x24 tiles, HUD en las filas 0..2. */
 #define ROOM_W (RT_COLS * 8)   /* 256 */
@@ -74,7 +75,8 @@ static int solid_at(int x, int y)
     if (block_solid(r, c)) return 1;        /* bloque empujable (pos actual) = sólido */
     /* gráficos horneados que se blanquean (spawn de enemigo/bloque, llaves) NO
      * son pared: la colisión debe verlos como AIRE para que coincida con lo dibujado */
-    if (enemy_spawn_cell(r, c) || block_spawn_cell(r, c) || key_cell(r, c)) return 0;
+    if (enemy_spawn_cell(r, c) || block_spawn_cell(r, c) || key_cell(r, c) ||
+        item_cell(r, c)) return 0;
     return tile_solid[ROOM_NT[g_room_idx][r][c]];
 }
 
@@ -83,7 +85,8 @@ static int solid_at(int x, int y)
 int actors_tile_solid(int sr, int sc)
 {
     if (sc < 0 || sc >= RT_COLS || sr < 0 || sr >= RT_ROWS) return 1;
-    if (enemy_spawn_cell(sr, sc) || block_spawn_cell(sr, sc) || key_cell(sr, sc)) return 0;
+    if (enemy_spawn_cell(sr, sc) || block_spawn_cell(sr, sc) || key_cell(sr, sc) ||
+        item_cell(sr, sc)) return 0;
     return tile_solid[ROOM_NT[g_room_idx][sr][sc]];
 }
 

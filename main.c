@@ -33,6 +33,7 @@
 #include "actors.h"
 #include "enemies_port.h"
 #include "keys_port.h"
+#include "items_port.h"
 #include "doors_port.h"
 #include "blocks_port.h"
 #include "tiledata.h"
@@ -305,6 +306,7 @@ void faithful_play(uint8_t start_room)
     actors_init_room(room, 0);
     enemies_room_init(room);
     keys_room_init(room);
+    items_room_init(room);
     doors_room_init(room);
     blocks_room_init(room);
     g_actors_on = 1;   /* activa el render de geometría real + actores */
@@ -318,6 +320,7 @@ void faithful_play(uint8_t start_room)
         int edge = actors_update(left, right, up);
         enemies_step();
         keys_update(g_player_px, g_player_py, 8, 14);
+        items_update(g_player_px, g_player_py, 8, 14);
         doors_update(g_player_px, g_player_py, 8, 14);
         blocks_step();
         if (edge) {
@@ -331,6 +334,7 @@ void faithful_play(uint8_t start_room)
             actors_init_room(room, edge);
             enemies_room_init(room);
             keys_room_init(room);
+            items_room_init(room);
             doors_room_init(room);
             blocks_room_init(room);
         }
@@ -408,6 +412,7 @@ int main(int argc, char *argv[])
                 actors_init_room(room, 0);
                 enemies_room_init(room);
                 keys_room_init(room);
+                items_room_init(room);
                 doors_room_init(room);
                 blocks_room_init(room);
                 g_actors_on = 1;
@@ -421,17 +426,38 @@ int main(int argc, char *argv[])
                 if (opy) g_player_py = atoi(opy);
                 if (getenv("CASTLE_GIVEKEYS"))
                     for (int c = 0; c < KEY_COLORS; c++) g_key_inv[c] = 9;
+                /* CASTLE_MOVES: guion de movimientos, 1 char por frame:
+                 *   R=derecha L=izquierda U=salto D=der+salto A=izq+salto .=nada
+                 * (si termina el guion, no se mueve más). Pisa la coreografía default. */
+                const char *mv = getenv("CASTLE_MOVES");
                 for (int f = 0; f < nframes; f++) {
-                    int right = jhold ? 0 : (f > 8 && f < 28);
-                    int up    = jhold ? (f >= 5 && f < 5 + jhold) : (f == 14 || f == 22);
-                    actors_update(0, right, up);
+                    int left, right, up;
+                    if (mv) {
+                        char m = (f < (int)strlen(mv)) ? mv[f] : '.';
+                        left  = (m == 'L' || m == 'A');
+                        right = (m == 'R' || m == 'D');
+                        up    = (m == 'U' || m == 'D' || m == 'A');
+                    } else {
+                        left  = 0;
+                        right = jhold ? 0 : (f > 8 && f < 28);
+                        up    = jhold ? (f >= 5 && f < 5 + jhold) : (f == 14 || f == 22);
+                    }
+                    actors_update(left, right, up);
                     enemies_step();
                     keys_update(g_player_px, g_player_py, 8, 14);
+                    items_update(g_player_px, g_player_py, 8, 14);
                     doors_update(g_player_px, g_player_py, 8, 14);
                     blocks_step();
                     if (getenv("CASTLE_DOORTEST") && f == 25) {
                         doors_room_init(room);   /* simula salir y volver a la sala */
                         printf(">>> re-init sala (simula volver)\n");
+                    }
+                    /* CASTLE_DOORROOM=XX (hex): a f25 carga las puertas de OTRA
+                     * sala (verifica que la gemela quedó abierta por pairing) */
+                    const char *drm = getenv("CASTLE_DOORROOM");
+                    if (drm && f == 25) {
+                        doors_room_init((unsigned char)strtol(drm, NULL, 16));
+                        printf(">>> puertas de la sala 0x%s:\n", drm);
                     }
                     hal_vdp_present();
                     char p[256];

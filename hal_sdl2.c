@@ -21,6 +21,7 @@
 #include "player_sprite.h"
 #include "enemies_port.h"
 #include "keys_port.h"
+#include "items_port.h"
 #include "doors_port.h"
 #include "blocks_port.h"
 #include "screen.h"
@@ -609,6 +610,16 @@ static void debug_draw_geom(void)
             for (int dr = 0; dr < g_pkey[i].sh; dr++)
                 for (int dc = 0; dc < g_pkey[i].sw; dc++) {
                     int rr = g_pkey[i].srow + dr, cc = g_pkey[i].scol + dc;
+                    if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
+                        nt[rr][cc] = (unsigned short)g_room_air;
+                }
+        }
+        /* ítems YA recogidos: blanquear su gráfico horneado (desaparecen) */
+        for (int i = 0; i < g_pitem_n; i++) {
+            if (g_pitem[i].active) continue;   /* presente -> se ve horneado */
+            for (int dr = 0; dr < 2; dr++)
+                for (int dc = 0; dc < 2; dc++) {
+                    int rr = g_pitem[i].srow + dr, cc = g_pitem[i].scol + dc;
                     if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
                         nt[rr][cc] = (unsigned short)g_room_air;
                 }

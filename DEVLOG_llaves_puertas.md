@@ -175,20 +175,30 @@ Cada uno crea `XX_done.txt` al terminar y sale solo.
 
 ## 6. Pendiente / riesgos conocidos
 
+- ✅ **Apertura probada en vivo (2026-06-09, harness):** abre con la llave y consume 1
+  (inv 9→8), bloquea sin llave, persiste al volver, se blanquea al abrir.
+- ✅ **Puertas GEMELAS (2026-06-09):** las gates de borde son el mismo pasaje en las
+  dos salas contiguas → al abrir una se abre la gemela (`open_twin()` en doors_port:
+  lateral col0/col28 matchea por drow±1; vertical row tope/base por dcol±1; el grid
+  envuelve). Verificado room70 (29,15) → room71 (1,15) OPEN.
+- ✅ **ÍTEMS 0xE3D6 (2026-06-09):** vals 0x22-0x29 ahora son recogibles (tabla
+  `items_data.c` ×256, `items_port.c`): se recogen al tocar, desaparecen, persisten,
+  y NUNCA son sólidos (antes eran obstáculos horneados sólidos que había que saltar
+  — el "mapa de colisiones mal" reportado). TODO fiel: puntos (0x27-29, sub_5D87),
+  revelar mapa (0x22), efectos power-ups (0x23-26).
 - ⚠️ **color1: 5 puertas, 0 llaves.** Hay 5 gates que piden color1 pero no existe
   ninguna llave color1 en `0xE3D6`. Puede ser: (a) puertas dead-end intencionales,
   (b) ruido de slot, o (c) decode de `val` levemente off para esos casos. Revisar
   qué salas/valores son (filtrar `(val&0xF)==2` en los `e346_*.bin`).
-- ⚠️ **Apertura de puertas no probada en vivo** (sólo lógica + render). Falta correr
-  interactivo el flujo completo: recoger llave → empujar puerta del color → abre,
-  descuenta, pasa. Hay env de test: `CASTLE_GIVEKEYS=1`, `CASTLE_PX/PY`, `CASTLE_ENEMYDBG`.
 - ⚠️ **Salidas `0x21` (NEXT) vs gates `0xE346`.** Las salidas auto-recarga (sin
   llave) están en `0xE3D6`; las gates con candado en `0xE346`. Verificar que la
   transición de sala (room_transition) y las gates de borde no se pisen.
 - **Bloques empujables** no persisten su posición al reentrar a la sala (vuelven al
-  spawn). Enemigos (path-replay) atraviesan bloques movidos. (Heredado, no de esta sesión.)
+  spawn). Enemigos (path-replay) atraviesan bloques movidos. (Heredado.)
 - **Tile de puerta ABIERTA:** el ROM redibuja `(val>>4)+0x3F`; el port sólo blanquea
   (queda hueco transitable). Si se quiere fiel, dibujar ese tile.
+- **Harness:** `CASTLE_MOVES` (guion R/L/U/D/A/. por frame) y `CASTLE_DOORROOM=XX`
+  (a f25 carga las puertas de otra sala para inspeccionar gemelas).
 
 ---
 
