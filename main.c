@@ -439,8 +439,9 @@ int main(int argc, char *argv[])
                     hal_screenshot(p);
                     if (jt) printf("f%02d py=%d air=%d\n", f, g_player_py, g_player_air);
                     if (getenv("CASTLE_ENEMYDBG")) {
-                        printf("f%02d lives=%d inv[%d,%d,%d,%d] px=%d py=%d doors:", f, g_player_lives, g_key_inv[0],g_key_inv[1],g_key_inv[2],g_key_inv[3], g_player_px, g_player_py);
-                        for (int dd = 0; dd < g_door_n; dd++) printf("[c%d cnt%d %s]", g_door[dd].color, g_door[dd].count, g_door[dd].open?"OPEN":"shut");
+                        printf("f%02d lives=%d inv[%d,%d,%d,%d,%d,%d] px=%d py=%d doors:", f, g_player_lives,
+                               g_key_inv[0],g_key_inv[1],g_key_inv[2],g_key_inv[3],g_key_inv[4],g_key_inv[5], g_player_px, g_player_py);
+                        for (int dd = 0; dd < g_door_n; dd++) printf("[c%d@%d,%d cnt%d %s]", g_door[dd].color, g_door[dd].dcol, g_door[dd].drow, g_door[dd].count, g_door[dd].open?"OPEN":"shut");
                         printf(" blk:"); for (int bb = 0; bb < g_block_n; bb++) printf("(%d,%d)", g_block[bb].scol, g_block[bb].srow);
                         for (int e = 0; e < g_pen_n; e++)
                             printf(" | t%02X r%d c%d", g_pen[e].type, g_pen[e].row, g_pen[e].col);
