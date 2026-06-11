@@ -130,11 +130,21 @@ Avance 2026-06-11 — MAPA ESTRUCTURAL COMPLETO del núcleo del jugador:
 
 ✅ Trazas-oráculo en `tests/fixtures/traces/` (6 guiones por frame).
 
-**Pendiente para portar `player.c`:** leer el bloque 0x4586-0x49B5 (escaleras
-W/S — sub_45AD/4710/4820/4882, daño/muerte), `sub_5053` (transición),
-`sub_4499` (salida por puerta), `0x62D8` (render+triggers por frame) y
-`0x623C`. Portar sobre el espejo RAM del room_loader y validar frame a frame
-contra las trazas (mismo guion → misma posición/fase/patrón).
+✅ **player.c PORTADO y validado: 6/6 trazas frame-perfect (456 frames)** —
+suite `jugador` en el runner. Incluye sub_4325+sub_758C (puertas:
+rl_door_press) porque la traza walk choca contra la puerta cerrada.
+
+**sub_5053 (transición de sala) YA MAPEADO** (0x5053): sala BCD con DAA
+(arriba -0x10, der +1, abajo +0x10, izq -1), posición de entrada = borde
+opuesto (E335=0x11 / E334=0 / E335=0 / E334=0x1C), LDIR E334-E345 →
+E322-E333 (commit del estado activo: llaves E337+, score E33D+), sub_6134 =
+commit de los slots de puertas a los bitfields (vía sub_6110 set/clear bit),
+minimapa sub_63FD si E321 bit3.
+
+**Pendiente para cerrar Fase 3:** conmutar faithful_play a player.c +
+rl_room_exit (port de 5053+6134); pickup real de llaves/ítems = sub_5B96
+(dispatcher, mapeado) + handlers 0x5C3A+ (leer); escaleras (bloque 0x4586+,
+vía sub_434A/442D); daño/muerte (sub_4406/sub_518E); 0x62D8/0x623C.
 - Portar el frame loop real (el esqueleto `game_frame()` ya mapea el orden de
   llamadas) y el movimiento/física del jugador del disasm. Transición de sala
   real (`sub_5053`), no la heurística de bordes de `faithful_play()`.
