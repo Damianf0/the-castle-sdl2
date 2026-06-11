@@ -32,8 +32,22 @@
 #include <stdint.h>
 #include "player.h"
 #include "room_loader.h"
+#include "hal.h"
+#include "game.h"
 
 int g_plr_px, g_plr_py, g_plr_frame;
+
+/* ===== sub_6F27 + sub_6EE1/sub_6EAE: sprites del jugador (planos 8-10) =====
+ * patron = frame*3+plano (el attr guarda patron*4, sprites 16x16); color de
+ * la tabla ROM en (0x7CF0) indexada por patron, con tintes de sala: si
+ * (0xE343) el rojo (8) parpadea a blanco; si (0xE344) a verde. El VDP
+ * emulado los renderiza nativo desde la attr table 0x1B00. */
+static uint8_t rom_rb_p(uint16_t a)
+{
+    uint32_t o = (uint32_t)a - 0x4000u;
+    return (g_rom && o < g_rom_size) ? g_rom[o] : 0xFFu;
+}
+static void s_6F27(uint8_t frame);
 
 /* ===== acceso al espejo RAM del loader ===== */
 static uint8_t rr(uint16_t a)            { return rl_ram_rb(a); }
@@ -353,6 +367,35 @@ static void s_6F5C(uint8_t d, uint8_t e)
     s_6F94_anim(e);
 }
 
+/* sub_6F27: setea los 3 planos del jugador (sprites 8,9,10) */
+static void s_6F27(uint8_t frame)
+{
+    uint16_t coltab = (uint16_t)(rom_rb_p(0x7CF0u) | ((uint16_t)rom_rb_p(0x7CF1u) << 8));
+    uint8_t d = (uint8_t)(frame * 3u);
+    for (int b = 8; b < 11; b++) {
+        uint16_t attr = (uint16_t)(0x1B00u + b * 4);
+        uint8_t pat = (uint8_t)(d + (b - 8));
+        uint8_t col = rom_rb_p((uint16_t)(coltab + pat));
+        /* tintes de sala (sub_6EE1): el color 8 parpadea blanco/verde */
+        if (col == 8u) {
+            uint8_t t = rr(0xE343u);
+            if (t) {
+                uint8_t blink = (t < 3u) ? (uint8_t)(rr(0xEAC9u) & 1u)
+                                         : (uint8_t)(rr(0xEAC9u) & 4u);
+                if (blink) col = 0x0Fu;
+            } else if ((t = rr(0xE344u)) != 0u) {
+                uint8_t blink = (t < 3u) ? (uint8_t)(rr(0xEAC9u) & 1u)
+                                         : (uint8_t)(rr(0xEAC9u) & 4u);
+                if (blink) col = 0x02u;
+            }
+        }
+        hal_vdp_write_vram(attr,                 (uint8_t)g_plr_py);
+        hal_vdp_write_vram((uint16_t)(attr + 1), (uint8_t)g_plr_px);
+        hal_vdp_write_vram((uint16_t)(attr + 2), (uint8_t)(pat * 4u));
+        hal_vdp_write_vram((uint16_t)(attr + 3), col);
+    }
+}
+
 /* ==========================================================================
  * API
  * ========================================================================== */
@@ -372,8 +415,17 @@ void player_frame(uint8_t stick, uint8_t trig)
 
     s_40BB(&d, &e);
     s_6F5C(d, e);
+    s_6F27((uint8_t)g_plr_frame);          /* sprites 8-10 en la attr table */
 
     wr(0xEAC9u, (uint8_t)(fc + 1u));       /* 40AF: contador de frame */
+}
+
+void player_sync_pixel(void)
+{
+    g_plr_px = ((int)rl_ram_rb(0xE334u) + 1) * 8;
+    g_plr_py = ((int)rl_ram_rb(0xE335u) + 4) * 8 - 1;
+    g_plr_frame = 0;
+    s_6F27(0u);
 }
 
 uint8_t player_take_exit(void)

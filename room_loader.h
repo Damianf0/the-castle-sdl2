@@ -40,4 +40,13 @@ void rl_cell_blank(int srow, int scol);
  * Devuelve 1 si había puerta (el movimiento se bloquea ese frame). */
 int rl_door_press(uint8_t b, uint8_t c);
 
+/* sub_5053: transición de sala por borde (1=arriba 3=der 5=abajo 7=izq):
+ * committea la persistencia de las 4 tablas a los bitfields (sub_6134),
+ * ajusta la sala BCD y la posición de entrada, y guarda el estado activo.
+ * Después llamar rl_load_room(rl_ram_rb(0xE320)). */
+void rl_room_exit(uint8_t edge);
+
+/* redibuja los iconos de llave del HUD (sub_5E01) tras un pickup */
+void rl_keys_hud_redraw(void);
+
 #endif

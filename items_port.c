@@ -10,9 +10,7 @@
 PortItem g_pitem[ITEM_MAX];
 int      g_pitem_n;
 
-/* estado PERSISTENTE de ítems ya recogidos, por slot 0xE3D6 (16/sala) */
-static uint8_t s_itaken[100][16];
-static int     s_iidx;
+/* (persistencia REAL: slot[0]=0 al recoger; sub_6134 lo committea al salir) */
 
 static void item_blank(const PortItem *p)
 {
@@ -26,8 +24,6 @@ void items_room_init(unsigned char room)
     int ry = room >> 4, rx = room & 0x0F;
     g_pitem_n = 0;
     if (rx > 9 || ry > 9) return;
-    int idx = ry * 10 + rx;
-    s_iidx = idx;
     for (int s = 0; s < 16 && g_pitem_n < ITEM_MAX; s++) {
         uint16_t e = (uint16_t)(0xE3D6u + s * 4);
         uint8_t act = rl_ram_rb(e), val = rl_ram_rb((uint16_t)(e + 1));
@@ -38,12 +34,11 @@ void items_room_init(unsigned char room)
             PortItem *p;
             if (scol > 30 || srow > 22) continue;
             p = &g_pitem[g_pitem_n++];
-            p->active = s_itaken[idx][s] ? 0 : 1;
+            p->active = 1;   /* el loader solo lista slots presentes */
             p->val    = val;
             p->slot   = (uint8_t)s;
             p->scol   = scol;
             p->srow   = srow;
-            if (!p->active) item_blank(p);      /* recogido: borrar el horneado */
         }
     }
 }
@@ -57,10 +52,10 @@ void items_update(int px, int py, int pw, int ph)
         int ix = p->scol * 8, iy = p->srow * 8;
         if (px < ix + 16 && px + pw > ix && py < iy + 16 && py + ph > iy) {
             p->active = 0;
+            rl_ram_wb((uint16_t)(0xE3D6u + p->slot * 4u), 0u);  /* persiste */
             item_blank(p);                  /* desaparece de la pantalla */
-            if (p->slot < 16) s_itaken[s_iidx][p->slot] = 1;   /* persiste */
-            /* TODO fiel: 0x27-0x29 suman puntos (sub_5D87), 0x22 revela el
-             * mapa, 0x23-0x26 efectos — pendiente de portar (Fase 5) */
+            /* TODO fiel (Fase 5): efectos reales vía sub_5B96/0x5C3A+ —
+             * 0x27-0x29 puntos (sub_5D87), 0x22 mapa, 0x23-0x26 power-ups */
         }
     }
 }

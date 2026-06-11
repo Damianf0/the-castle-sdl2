@@ -23,4 +23,8 @@ void player_frame(uint8_t stick, uint8_t trig);
  * 5=abajo, 7=izq. */
 uint8_t player_take_exit(void);
 
+/* Recalcula el pixel desde 0xE334/0xE335 (tras cargar sala) y resetea el
+ * sprite (sub_6F45 + sub_6F27 con frame 0). */
+void player_sync_pixel(void);
+
 #endif

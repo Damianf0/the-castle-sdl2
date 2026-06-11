@@ -141,10 +141,17 @@ E322-E333 (commit del estado activo: llaves E337+, score E33D+), sub_6134 =
 commit de los slots de puertas a los bitfields (vía sub_6110 set/clear bit),
 minimapa sub_63FD si E321 bit3.
 
-**Pendiente para cerrar Fase 3:** conmutar faithful_play a player.c +
-rl_room_exit (port de 5053+6134); pickup real de llaves/ítems = sub_5B96
-(dispatcher, mapeado) + handlers 0x5C3A+ (leer); escaleras (bloque 0x4586+,
-vía sub_434A/442D); daño/muerte (sub_4406/sub_518E); 0x62D8/0x623C.
+✅ **SWITCHOVER hecho**: faithful_play corre con player.c + rl_room_exit
+(sub_5053+sub_6134 portados) + sprite por VDP (patrones 0x9B96, colores
+(0x7CF0) con tintes 0xE343/E344) + puertas/persistencia/gemelas 100% reales
+vía el ciclo bitfield. Verificado end-to-end: llave→puerta→cruce→transición
+BCD a 0x71. Murieron: física de actors en el loop, doors_port del loop,
+player_sprite.c, s_ktaken/s_itaken.
+
+**Restos de Fase 3 (van con Fases 4-5):** daño/muerte (sub_4406 + sub_518E,
+respawns tabla 0x5748); empuje de bloques (sub_4273, trampolín 0xEAFA);
+escaleras (bloque 0x4586+ vía sub_434A/442D); pickup por celda (sub_5B96 +
+handlers 0x5C3A+) en vez del AABB maqueta; 0x62D8/0x623C (render/triggers).
 - Portar el frame loop real (el esqueleto `game_frame()` ya mapea el orden de
   llamadas) y el movimiento/física del jugador del disasm. Transición de sala
   real (`sub_5053`), no la heurística de bordes de `faithful_play()`.

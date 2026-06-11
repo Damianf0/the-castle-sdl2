@@ -17,12 +17,7 @@
 #include "game.h"
 #include "geom.h"
 #include "actors.h"
-#include "player_sprite.h"
 #include "enemies_port.h"
-#include "keys_port.h"
-#include "items_port.h"
-#include "doors_port.h"
-#include "blocks_port.h"
 
 int g_actors_on = 0;   /* el viewer lo activa para dibujar jugador+enemigos */
 
@@ -579,97 +574,12 @@ static void blit_cell16(int bx, int by, const uint8_t *t16, int mirror, int tran
 
 static void debug_draw_geom(void)
 {
+    void draw_enemies(int, int);
     if (!g_actors_on) return;
-
-    /* bloques empujables: gráfico 2x2 (capturado de la VRAM) en su posición actual */
-    for (int i = 0; i < g_block_n; i++) {
-        if (!g_block[i].active) continue;
-        for (int dr = 0; dr < 2; dr++)
-            for (int dc = 0; dc < 2; dc++)
-                blit_cell16((g_block[i].scol + dc) * 8, (g_block[i].srow + dr) * 8,
-                            g_block[i].gfx[dr * 2 + dc], 0, 0);
-    }
-
-    {
-        void draw_actors(int,int); draw_actors(0, 0);
-    }
-
-    /* HUD: inventario de llaves recogidas (un ícono por llave, por color) */
-    {
-        static const uint8_t KEYICON[10] = {
-            0x3C,0x42,0x42,0x3C,0x18,0x18,0x18,0x1E,0x1A,0x1E };
-        int hx = 56, hy = 16;
-        for (int ci = 0; ci < KEY_COLORS; ci++) {
-            for (int k = 0; k < g_key_inv[ci]; k++) {
-                uint32_t c = g_palette[g_key_color[ci] ? g_key_color[ci] : 15];
-                for (int yy = 0; yy < 10; yy++) {
-                    int y = hy + yy; if (y < 0 || y >= MSX_H) continue;
-                    uint8_t bits = KEYICON[yy];
-                    for (int b = 0; b < 8; b++) {
-                        if (!(bits & (0x80u >> b))) continue;
-                        int x = hx + b; if (x < 0 || x >= MSX_W) continue;
-                        framebuf[y * MSX_W + x] = c;
-                    }
-                }
-                hx += 9;
-                if (hx > MSX_W - 10) { hx = 56; hy += 11; }   /* envolver fila */
-            }
-        }
-    }
-}
-
-/* dibuja un sprite 8xN desde un bitmap de filas (bit alto = col 0) */
-static void blit_sprite(int sx, int sy, const uint8_t *rows, int h,
-                        uint32_t color, int flip)
-{
-    for (int yy = 0; yy < h; yy++) {
-        int y = sy + yy; if (y < 0 || y >= MSX_H) continue;
-        uint8_t bits = rows[yy];
-        for (int b = 0; b < 8; b++) {
-            if (!(bits & (0x80u >> b))) continue;
-            int x = sx + (flip ? (7 - b) : b);
-            if (x < 0 || x >= MSX_W) continue;
-            framebuf[y * MSX_W + x] = color;
-        }
-    }
-}
-
-/* dibuja un frame 16x16 del jugador (indice de color, 0=transparente) */
-static void blit_player_frame(int sx, int sy, int frame)
-{
-    for (int r = 0; r < 16; r++) {
-        int y = sy + r; if (y < 0 || y >= MSX_H) continue;
-        for (int c = 0; c < 16; c++) {
-            uint8_t idx = PLAYER_SPR[frame][r][c];
-            if (!idx) continue;
-            int x = sx + c; if (x < 0 || x >= MSX_W) continue;
-            framebuf[y * MSX_W + x] = g_palette[idx];
-        }
-    }
-}
-
-void draw_enemies(int OX, int OY);
-
-void draw_actors(int OX, int OY)
-{
-    /* Sprite real del jugador (16x16) extraido del ROM. El AABB de fisica es
-     * 16x16 = el borde del sprite: se dibuja en (px,py) sin offset. */
-    int frame;
-    if (g_player_air) {
-        frame = (g_player_face == 1) ? PLF_JUMP_R : PLF_JUMP_L;
-    } else if (!g_player_moving) {
-        frame = (g_player_face == 1) ? PLF_WALK_R0 : PLF_STAND;
-    } else if (g_player_face == 1) {
-        static const int rcyc[3] = { PLF_WALK_R0, PLF_WALK_R1, PLF_WALK_R2 };
-        frame = rcyc[(g_player_anim >> 2) % 3];
-    } else {
-        frame = ((g_player_anim >> 2) & 1) ? PLF_WALK_L1 : PLF_WALK_L0;
-    }
-    /* mientras es invulnerable tras un golpe, parpadea (se salta frames pares) */
-    if (!(g_player_invuln > 0 && (g_player_invuln & 4)))
-        blit_player_frame(OX + g_player_px, OY + g_player_py, frame);
-
-    draw_enemies(OX, OY);
+    /* el jugador lo dibuja el VDP (sprites 8-10, attr table escrita por
+     * player.c); el HUD de llaves lo dibuja sub_5E01 en la name table.
+     * Queda solo el overlay de enemigos (path-replay — Fase 4). */
+    draw_enemies(0, 0);
 }
 
 /* Enemigos faithful: MOVIMIENTO = replay exacto del ROM (enemies_port.c) y

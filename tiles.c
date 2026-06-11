@@ -109,6 +109,12 @@ void tiles_load_from_rom(const uint8_t *rom_data, uint32_t rom_size)
     /* tile 0x00 NO se escribe: conserva el estado INIGRP (ver TILE_MAP) */
     for (uint16_t i = 1u; i < 256; i++)
         write_tile_to_vdp((uint8_t)i, (uint8_t)i);
+
+    /* patrones de SPRITE: ROM 0x9B96 -> VRAM 0x3800 (LDIRVM del boot 0x4D02).
+     * El jugador (sprites 8-10, escritos por player.c) los necesita. */
+    for (uint16_t i = 0u; i < 0x800u; i++)
+        hal_vdp_write_vram((uint16_t)(0x3800u + i),
+                           (rom_size > 0x5B96u + i) ? rom_data[0x5B96u + i] : 0u);
 }
 
 void tiles_reload_all(void)

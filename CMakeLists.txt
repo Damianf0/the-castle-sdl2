@@ -27,8 +27,8 @@ set(GAME_SOURCES
     tiledata.c      # Arrays de tiles cargados desde ROM
     geom.c          # Decoder de geometría de sala portado del disasm (sub_6616+)
     room_loader.c   # ROOM LOADER fiel (sub_64DD): salas desde el ROM, 700/700 fixtures
-    actors.c        # Motor maqueta: jugador/física (a reemplazar en Fase 3)
-    player_sprite.c # Sprite real del jugador (ROM 0x9B96)
+    player.c        # JUGADOR fiel (sub_40BB+sub_6F5C), validado contra trazas
+    actors.c        # Maqueta restante (la usa el viewer de debug; muere en F4-5)
     enemies_paths.c # Trayectorias grabadas de enemigos (a reemplazar en Fase 4)
     # --- Capa "port" del motor maqueta (a reemplazar en Fases 3-5) ---
     doors_port.c

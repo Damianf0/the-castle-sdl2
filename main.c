@@ -306,42 +306,37 @@ void faithful_play(uint8_t start_room)
     rl_reset();                /* estado de partida (sub_4D52): vidas, persistencia */
     geom_decode_room(room);
     rl_load_room(room);        /* sala desde el ROM: VRAM + tablas (sub_64DD) */
-    actors_init_room(room, 0);
+    player_sync_pixel();       /* sub_6F45 + sub_6F27 (cierre real de sub_64DD) */
     enemies_room_init(room);
     keys_room_init(room);
     items_room_init(room);
-    doors_room_init(room);
-    blocks_room_init(room);
-    g_actors_on = 1;   /* activa el overlay de actores sobre el render del VDP */
+    g_actors_on = 1;   /* overlay de enemigos sobre el render del VDP */
 
+    /* El JUGADOR es el real (player.c = sub_40BB + sub_6F5C, validado contra
+     * las trazas): colisión por el colmap del loader, puertas por
+     * rl_door_press (sub_4325/758C), transición por rl_room_exit (sub_5053 +
+     * commit de persistencia sub_6134), sprite por el VDP (planos 8-10).
+     * Maqueta restante: enemigos path-replay (Fase 4), pickup AABB (los
+     * efectos reales son Fase 5), sin daño ni empuje de bloques todavía
+     * (sub_4406 / sub_4273 — Fases 4-5). */
     while (hal_poll_events()) {
-        uint8_t dir = hal_joystick_read(0);
-        int left  = (dir == 6 || dir == 7 || dir == 8);
-        int right = (dir == 2 || dir == 3 || dir == 4);
-        int up    = (dir == 1 || dir == 2 || dir == 8) || hal_key_pressed();
-
-        int edge = actors_update(left, right, up);
-        enemies_step();
-        keys_update(g_player_px, g_player_py, 16, 16);
-        items_update(g_player_px, g_player_py, 16, 16);
-        doors_update(g_player_px, g_player_py, 16, 16);
-        blocks_step();
-        if (edge) {
-            uint8_t hi = room >> 4, lo = room & 0x0Fu;
-            if      (edge == 1) hi = (hi == 0) ? 9 : hi - 1;
-            else if (edge == 5) hi = (hi == 9) ? 0 : hi + 1;
-            else if (edge == 3) lo = (lo == 9) ? 0 : lo + 1;
-            else if (edge == 7) lo = (lo == 0) ? 9 : lo - 1;
-            room = (uint8_t)((hi << 4) | lo);
-            geom_decode_room(room);
-            rl_load_room(room);
-            actors_init_room(room, edge);
-            enemies_room_init(room);
-            keys_room_init(room);
-            items_room_init(room);
-            doors_room_init(room);
-            blocks_room_init(room);
+        player_frame(hal_joystick_read(0), hal_key_pressed() ? 1u : 0u);
+        {
+            uint8_t edge = player_take_exit();
+            if (edge) {
+                rl_room_exit(edge);
+                room = rl_ram_rb(0xE320u);
+                geom_decode_room(room);
+                rl_load_room(room);
+                player_sync_pixel();
+                enemies_room_init(room);
+                keys_room_init(room);
+                items_room_init(room);
+            }
         }
+        enemies_step();
+        keys_update(g_plr_px, g_plr_py, 16, 16);
+        items_update(g_plr_px, g_plr_py, 16, 16);
         hal_wait_vsync();
     }
     g_actors_on = 0;
@@ -565,73 +560,69 @@ int main(int argc, char *argv[])
             if (rs) room = (uint8_t)strtol(rs, NULL, 16);
             geom_decode_room(room);
             if (getenv("CASTLE_ACTORS")) {
-                /* captura animada: simula frames con jugador+enemigos y guarda secuencia */
+                /* captura animada con el JUGADOR REAL (player.c) + enemigos:
+                 * CASTLE_MOVES (R/L/U/D/A/W/S/.) un char por frame,
+                 * CASTLE_GIVEKEYS=1 da 9 llaves de cada color (en la RAM real:
+                 * abre puertas vía rl_door_press), CASTLE_FRAMES=N. */
+                int nframes = 40;
+                const char *nf = getenv("CASTLE_FRAMES");
+                const char *mv = getenv("CASTLE_MOVES");
+                if (nf) nframes = atoi(nf);
                 rl_reset();
                 rl_load_room(room);
-                actors_init_room(room, 0);
+                player_sync_pixel();
                 enemies_room_init(room);
                 keys_room_init(room);
                 items_room_init(room);
-                doors_room_init(room);
-                blocks_room_init(room);
+                if (getenv("CASTLE_GIVEKEYS")) {
+                    for (int c = 0; c < KEY_COLORS; c++)
+                        rl_ram_wb((uint16_t)(0xE337u + c), 9u);
+                    rl_keys_hud_redraw();
+                }
                 g_actors_on = 1;
-                int nframes = 40;
-                const char *nf = getenv("CASTLE_FRAMES");
-                if (nf) nframes = atoi(nf);
-                int jhold = 0; const char *jt = getenv("CASTLE_JUMPHOLD");
-                if (jt) jhold = atoi(jt);  /* test de salto: mantener SPACE jhold frames desde f=5 */
-                const char *opx = getenv("CASTLE_PX"), *opy = getenv("CASTLE_PY");
-                if (opx) g_player_px = atoi(opx);
-                if (opy) g_player_py = atoi(opy);
-                if (getenv("CASTLE_GIVEKEYS"))
-                    for (int c = 0; c < KEY_COLORS; c++) g_key_inv[c] = 9;
-                /* CASTLE_MOVES: guion de movimientos, 1 char por frame:
-                 *   R=derecha L=izquierda U=salto D=der+salto A=izq+salto .=nada
-                 * (si termina el guion, no se mueve más). Pisa la coreografía default. */
-                const char *mv = getenv("CASTLE_MOVES");
                 for (int f = 0; f < nframes; f++) {
-                    int left, right, up;
-                    if (mv) {
-                        char m = (f < (int)strlen(mv)) ? mv[f] : '.';
-                        left  = (m == 'L' || m == 'A');
-                        right = (m == 'R' || m == 'D');
-                        up    = (m == 'U' || m == 'D' || m == 'A');
-                    } else {
-                        left  = 0;
-                        right = jhold ? 0 : (f > 8 && f < 28);
-                        up    = jhold ? (f >= 5 && f < 5 + jhold) : (f == 14 || f == 22);
+                    uint8_t stick = 0u, trig = 0u;
+                    char m = (mv && f < (int)strlen(mv)) ? mv[f] : '.';
+                    switch (m) {
+                        case 'R': stick = 3u; break;
+                        case 'L': stick = 7u; break;
+                        case 'U': trig = 1u; break;
+                        case 'D': stick = 3u; trig = 1u; break;
+                        case 'A': stick = 7u; trig = 1u; break;
+                        case 'W': stick = 1u; break;
+                        case 'S': stick = 5u; break;
+                        default: break;
                     }
-                    actors_update(left, right, up);
+                    player_frame(stick, trig);
+                    {
+                        uint8_t edge = player_take_exit();
+                        if (edge) {
+                            rl_room_exit(edge);
+                            room = rl_ram_rb(0xE320u);
+                            geom_decode_room(room);
+                            rl_load_room(room);
+                            player_sync_pixel();
+                            enemies_room_init(room);
+                            keys_room_init(room);
+                            items_room_init(room);
+                            printf(">>> f%02d transicion a sala 0x%02X\n", f, room);
+                        }
+                    }
                     enemies_step();
-                    keys_update(g_player_px, g_player_py, 16, 16);
-                    items_update(g_player_px, g_player_py, 16, 16);
-                    doors_update(g_player_px, g_player_py, 16, 16);
-                    blocks_step();
-                    if (getenv("CASTLE_DOORTEST") && f == 25) {
-                        doors_room_init(room);   /* simula salir y volver a la sala */
-                        printf(">>> re-init sala (simula volver)\n");
-                    }
-                    /* CASTLE_DOORROOM=XX (hex): a f25 carga las puertas de OTRA
-                     * sala (verifica que la gemela quedó abierta por pairing) */
-                    const char *drm = getenv("CASTLE_DOORROOM");
-                    if (drm && f == 25) {
-                        doors_room_init((unsigned char)strtol(drm, NULL, 16));
-                        printf(">>> puertas de la sala 0x%s:\n", drm);
-                    }
+                    keys_update(g_plr_px, g_plr_py, 16, 16);
+                    items_update(g_plr_px, g_plr_py, 16, 16);
                     hal_vdp_present();
-                    char p[256];
-                    snprintf(p, sizeof(p), "%s_%02d.bmp", shot, f);
-                    hal_screenshot(p);
-                    if (jt) printf("f%02d py=%d air=%d\n", f, g_player_py, g_player_air);
-                    if (getenv("CASTLE_ENEMYDBG")) {
-                        printf("f%02d lives=%d inv[%d,%d,%d,%d,%d,%d] px=%d py=%d doors:", f, g_player_lives,
-                               g_key_inv[0],g_key_inv[1],g_key_inv[2],g_key_inv[3],g_key_inv[4],g_key_inv[5], g_player_px, g_player_py);
-                        for (int dd = 0; dd < g_door_n; dd++) printf("[c%d@%d,%d cnt%d %s]", g_door[dd].color, g_door[dd].dcol, g_door[dd].drow, g_door[dd].count, g_door[dd].open?"OPEN":"shut");
-                        printf(" blk:"); for (int bb = 0; bb < g_block_n; bb++) printf("(%d,%d)", g_block[bb].scol, g_block[bb].srow);
-                        for (int e = 0; e < g_pen_n; e++)
-                            printf(" | t%02X r%d c%d", g_pen[e].type, g_pen[e].row, g_pen[e].col);
-                        printf("\n");
+                    {
+                        char p[256];
+                        snprintf(p, sizeof(p), "%s_%02d.bmp", shot, f);
+                        hal_screenshot(p);
                     }
+                    if (getenv("CASTLE_ENEMYDBG"))
+                        printf("f%02d px=%d py=%d fase=%d col=%d fila=%d inv=%d,%d,%d,%d,%d,%d\n",
+                               f, g_plr_px, g_plr_py, rl_ram_rb(0xEAD6u),
+                               rl_ram_rb(0xE334u), rl_ram_rb(0xE335u),
+                               rl_ram_rb(0xE337u), rl_ram_rb(0xE338u), rl_ram_rb(0xE339u),
+                               rl_ram_rb(0xE33Au), rl_ram_rb(0xE33Bu), rl_ram_rb(0xE33Cu));
                 }
                 printf("captura animada -> %s_NN.bmp (sala 0x%02x, %d frames)\n",
                        shot, room, nframes);

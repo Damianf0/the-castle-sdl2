@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-06-11 (5) — Fase 3: SWITCHOVER — el gameplay corre con el jugador REAL
+
+### faithful_play ahora es el motor fiel
+- Jugador: `player.c` (sub_40BB+sub_6F5C, validado 6/6 trazas). Colisión por
+  el colmap del loader; SPRITE por el VDP nativo (planos 8-10, patrones ROM
+  0x9B96→VRAM 0x3800, colores de la tabla (0x7CF0) con tintes de sala
+  0xE343/E344). Murieron: la física de actors.c en el loop, draw_actors,
+  blit_player_frame y player_sprite.c (el VDP usa los patrones reales).
+- Transición de sala REAL: `rl_room_exit` = sub_5053 (sala BCD con DAA,
+  entrada por el borde opuesto conservando la perpendicular — lo que la
+  maqueta hacía a mano ahora es gratis) + sub_6134 (committea las 4 tablas
+  de objetos a los bitfields de persistencia).
+- Puertas 100% reales: presionar → rl_door_press (sub_4325/758C) consume la
+  llave de la RAM 0xE337+color, abre, redibuja y limpia colisión. La
+  persistencia (y las puertas GEMELAS) salen GRATIS del ciclo bitfield:
+  abrir → slot[0]=0 → sub_6134 al salir → el loader no la dibuja al volver.
+  doors_port (persistencia por posición + open_twin a mano) fuera del loop.
+- Pickup integrado al ciclo real: recoger llave = 0xE337+color++ +
+  slot[0]=0 + HUD por sub_5E01; ítems = slot[0]=0. Murieron los arrays
+  s_ktaken/s_itaken (la persistencia es la del ROM). El AABB del pickup
+  sigue siendo maqueta (el real es por celda vía sub_5B96 — Fase 5).
+- Verificado end-to-end: caminar → agarrar llave → abrir puerta → cruzarla →
+  bloquearse en la siguiente puerta cerrada → con llaves, salir por la
+  derecha → "transicion a sala 0x71" (BCD) con entrada a la misma altura.
+- Pendiente (documentado): daño/muerte (sub_4406), empuje de bloques
+  (sub_4273), escaleras (0x4586+), efectos de ítems (5B96/5C3A) — Fases 4-5.
+
+Harness 11/11. CASTLE_ACTORS reescrito sobre el motor fiel (CASTLE_MOVES con
+stick/trigger reales, CASTLE_GIVEKEYS escribe la RAM 0xE337).
+
 ## 2026-06-11 (4) — Fase 3 (núcleo): jugador portado, 6/6 trazas frame-perfect
 
 ### player.c = sub_40BB + sub_6F5C fieles

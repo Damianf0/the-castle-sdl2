@@ -830,7 +830,108 @@ void rl_boot_vram(void)
         load_desc(0x7BCEu, (uint16_t)((t << 8) | 0x1Du), 0x0Au);
     }
     boot_tiles();                                   /* game start: sub_4D52 */
+
+    /* patrones de SPRITE: ROM 0x9B96 -> VRAM 0x3800 (LDIRVM del boot 0x4D02).
+     * El jugador son 3 planos (sprites 8-10), patron = frame*3+plano (x4). */
+    for (uint16_t i = 0; i < 0x800u; i++)
+        hal_vdp_write_vram((uint16_t)(0x3800u + i), rb((uint16_t)(0x9B96u + i)));
+    /* sprite attr table: todos "apagados" como el boot (Y=0xFF, patron 0x3F
+     * vacio) — el juego no usa el terminador 0xD0 */
+    for (int s = 0; s < 32; s++) {
+        uint16_t a = (uint16_t)(0x1B00u + s * 4);
+        hal_vdp_write_vram(a, 0xFFu);
+        hal_vdp_write_vram((uint16_t)(a + 1u), 0x00u);
+        hal_vdp_write_vram((uint16_t)(a + 2u), (uint8_t)(0x3Fu * 4u));
+        hal_vdp_write_vram((uint16_t)(a + 3u), 0x00u);
+    }
 }
+
+/* ===== sub_6110: setea/limpia el bit (7-(i&7)) de base+(i>>3) ===== */
+static void bitfield_set(uint16_t base, uint8_t slot, uint8_t value)
+{
+    uint16_t a = (uint16_t)(base + (slot >> 3));
+    uint8_t mask = (uint8_t)(1u << (7u - (slot & 7u)));
+    if (value) R(a) |= mask;
+    else       R(a) &= (uint8_t)~mask;
+}
+
+/* ===== sub_6134: committea el estado [0] de las 4 tablas de objetos a sus
+ * bitfields de persistencia (se llama al SALIR de la sala). ===== */
+static void s_6134(void)
+{
+    uint8_t n, i;
+    R(0xE48Eu) = 0u; R(0xE48Fu) = 0u; R(0xE490u) = 0u;
+    /* puertas E346: bitfield por categoría de columna (como sub_5FDF) */
+    n = R(0xE491u);
+    for (i = 0; i < n; i++) {
+        uint16_t e = (uint16_t)(0xE346u + i * 4u);
+        uint8_t open_bit = R(e);
+        uint8_t col = R((uint16_t)(e + 2u));
+        uint8_t prev, cat;
+        if (col == 0x00u)      { prev = R(0xE48Eu); R(0xE48Eu)++; cat = 0u; }
+        else if (col == 0x1Cu) { prev = R(0xE48Fu); R(0xE48Fu)++; cat = 2u; }
+        else                   { prev = R(0xE490u); R(0xE490u)++; cat = 1u; }
+        {
+            uint8_t rm = R(0xE320u);
+            bitfield_set((uint16_t)(0xE00Du + (rm >> 4) * 0x15u +
+                                    (rm & 0x0Fu) * 2u + cat), prev, open_bit);
+        }
+    }
+    /* COLL E386 -> 0xE0DF (2B/sala); items E3D6 -> 0xE1A7; BAT E416 -> 0xE26F */
+    n = R(0xE492u);
+    for (i = 0; i < n; i++)
+        bitfield_set((uint16_t)(0xE0DFu + room_idx() * 2u), i,
+                     R((uint16_t)(0xE386u + i * 5u)));
+    n = R(0xE493u);
+    for (i = 0; i < n; i++)
+        bitfield_set((uint16_t)(0xE1A7u + room_idx() * 2u), i,
+                     R((uint16_t)(0xE3D6u + i * 4u)));
+    n = R(0xE494u);
+    for (i = 0; i < n; i++)
+        bitfield_set((uint16_t)(0xE26Fu + room_idx()), i,
+                     R((uint16_t)(0xE416u + i * 5u)));
+}
+
+/* ===== sub_5053: transición de sala por el borde 0xEAE1 =====
+ * Committea la persistencia (sub_6134), ajusta la sala en BCD (¡DAA!) y la
+ * posición de entrada (borde opuesto), y copia el estado activo 0xE334-0xE345
+ * (posición, llaves 0xE337+, score 0xE33D+) al bloque persistente 0xE322
+ * (el inverso del LDIR de sub_64DD). El caller debe llamar rl_load_room()
+ * con la sala nueva (R(0xE320)). */
+static uint8_t bcd_add(uint8_t v, uint8_t d)   /* ADD + DAA (suma BCD) */
+{
+    uint8_t lo = (uint8_t)((v & 0x0Fu) + (d & 0x0Fu));
+    uint8_t hi = (uint8_t)((v >> 4) + (d >> 4) + (lo > 9u ? 1u : 0u));
+    return (uint8_t)(((hi % 10u) << 4) | (lo % 10u));
+}
+static uint8_t bcd_sub(uint8_t v, uint8_t d)
+{
+    int lo = (v & 0x0F) - (d & 0x0F);
+    int hi = (v >> 4) - (d >> 4) - (lo < 0 ? 1 : 0);
+    if (lo < 0) lo += 10;
+    if (hi < 0) hi += 10;
+    return (uint8_t)((hi << 4) | lo);
+}
+void rl_room_exit(uint8_t edge)
+{
+    if (edge == 0u) return;
+    s_6134();
+    /* minimapa (0xE321 bit3 → sub_63FD) — Fase 5 */
+    if (R(0xEAE2u)) {                      /* trigger 0x25: resetea puertas */
+        memset(&R(0xE00Du), 0, 0xD2);
+    }
+    switch (edge) {
+        case 1: R(0xE320u) = bcd_sub(R(0xE320u), 0x10u); R(0xE335u) = 0x11u; break;
+        case 3: R(0xE320u) = bcd_add(R(0xE320u), 0x01u); R(0xE334u) = 0x00u; break;
+        case 5: R(0xE320u) = bcd_add(R(0xE320u), 0x10u); R(0xE335u) = 0x00u; break;
+        case 7: R(0xE320u) = bcd_sub(R(0xE320u), 0x01u); R(0xE334u) = 0x1Cu; break;
+        default: break;
+    }
+    memcpy(&R(0xE322u), &R(0xE334u), 0x12);
+}
+
+/* redibuja los iconos de llave del HUD (sub_5E01) — para el pickup */
+void rl_keys_hud_redraw(void) { s_5E01(); }
 
 /* ===== sub_4325 + sub_758C: puerta presionada por el jugador ===== */
 int rl_door_press(uint8_t b, uint8_t c)
