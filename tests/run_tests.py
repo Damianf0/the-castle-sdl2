@@ -7,21 +7,15 @@ Uso (desde la raíz del repo):
     python tests/run_tests.py --no-build # usa el exe ya compilado
 
 Qué verifica:
-  1. build       : build.ps1 compila sin errores.
-  2. colmap      : CASTLE_DUMP colmap_XX.bin == fixture colmap/colmap_XX.bin[:600]
-                   (campo de colisión 20x30, RAM 0xE496) para las 100 salas.
-  3. doors       : CASTLE_DUMP doors_XX.txt == decode del fixture e346/ (reglas
-                   de sub_758C: color=(val&0xF)-1, pos=(col+1,row+4), 2x3, count 1).
-  4. keys        : keys_XX.txt == decode de e3d6/ (val>=0x2A, color=val-0x2A, 2x2).
-  5. items       : items_XX.txt == decode de e3d6/ (0x22<=val<=0x29).
-  6. screenshot  : CASTLE_SHOT produce un BMP válido y no uniforme (smoke).
-  7. vdp         : render SCREEN 2 del exe (CASTLE_VRAMIN) == renderer de
-                   referencia Python, pixel-exacto, sobre una muestra de
-                   dumps de VRAM reales (tests/fixtures/vram/).
-
-Hoy los dumps salen de tablas generadas DESDE los fixtures, así que 2-5 son
-verdes por construcción. El punto es que cuando el room loader portado
-(sub_64DD, Fase 2 del plan) reemplace esas tablas, esto DEBE seguir verde.
+  1. build        : build.ps1 compila sin errores.
+  2. loader *     : el ROOM LOADER PORTADO (room_loader.c = sub_64DD fiel)
+                    decodifica las 100 salas desde el ROM; sus tablas RAW
+                    (colmap+E6EE, e346, e3d6, e43e, objs, name table y la
+                    VRAM completa de tiles) == dumps de openMSX, byte a byte.
+  3. vdp          : render SCREEN 2 del exe (CASTLE_VRAMIN) == renderer de
+                    referencia Python, pixel-exacto, muestra de salas.
+  4. título       : VRAM del port en sub_4AD7 == captura openMSX.
+  5. screenshot   : smoke del modo actores.
 """
 import os, struct, subprocess, sys, tempfile
 
@@ -32,46 +26,6 @@ EXE = os.path.join(ROOT, 'the_castle.exe')
 def room_name(idx):
     """idx 0..99 -> nombre BCD 'XX' usado en los archivos (hi=fila, lo=col)."""
     return '%02X' % (((idx // 10) << 4) | (idx % 10))
-
-def decode_doors(e346):
-    out = []
-    for s in range(16):
-        active, val, col, row = e346[s*4:s*4+4]
-        if active and val:
-            color = (val & 0x0F) - 1
-            if color < 0 or color > 5:
-                continue
-            dcol, drow = col + 1, row + 4
-            if dcol > 30 or drow > 21:
-                continue
-            out.append('%d %d 2 3 %d 1' % (dcol, drow, color))
-    return out
-
-def decode_keys(e3d6):
-    out = []
-    for s in range(16):
-        active, val, col, row = e3d6[s*4:s*4+4]
-        if active and val >= 0x2A:
-            scol, srow = col + 1, row + 4
-            if scol > 30 or srow > 22:
-                continue
-            out.append('%d %d 2 2 %d' % (scol, srow, val - 0x2A))
-    return out
-
-def decode_items(e3d6):
-    out = []
-    for s in range(16):
-        active, val, col, row = e3d6[s*4:s*4+4]
-        if active and 0x22 <= val <= 0x29:
-            scol, srow = col + 1, row + 4
-            if scol > 30 or srow > 22:
-                continue
-            out.append('%d %d 0x%02X' % (scol, srow, val))
-    return out
-
-def read_lines(path):
-    with open(path) as f:
-        return [ln.strip() for ln in f if ln.strip()]
 
 # Paleta TMS9918A canónica (la misma de hal_sdl2.c y tools/render_vram.py)
 TMS_PAL = [(0,0,0),(0,0,0),(33,200,66),(94,220,120),(84,85,237),(125,118,252),
@@ -147,7 +101,11 @@ def run(results):
         print('[FAIL] exe no encontrado')
         return
 
-    # --- 2-5. CASTLE_DUMP vs fixtures ---------------------------------------
+    # --- 2-5. ROOM LOADER PORTADO (sub_64DD) vs fixtures ----------------------
+    # CASTLE_DUMP decodifica las 100 salas desde el ROM con room_loader.c y
+    # vuelca las tablas RAW; se comparan byte a byte contra los dumps de
+    # openMSX. La suite 'vram' incluye TODOS los datos de tile (alocador por
+    # tercio + espejos/corrimientos de gráficos) y el residuo del boot+título.
     with tempfile.TemporaryDirectory(prefix='castle_dump_') as dump:
         env = dict(os.environ, CASTLE_DUMP=dump)
         r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True, text=True)
@@ -156,33 +114,31 @@ def run(results):
             print('[FAIL] CASTLE_DUMP no corrió')
             return
 
-        def t_colmap():
-            errs = []
-            for idx in range(100):
-                xx = room_name(idx)
-                want = open(os.path.join(FIX, 'colmap', 'colmap_%s.bin' % xx), 'rb').read()[:600]
-                got = open(os.path.join(dump, 'colmap_%s.bin' % xx), 'rb').read()
-                if want != got:
-                    nbad = sum(1 for a, b in zip(want, got) if a != b)
-                    errs.append('sala %s: %d celdas difieren' % (xx, nbad))
-            return errs
-        check('colmap (100 salas, RAM 0xE496)', t_colmap)
-
-        def make_table_test(prefix, fixdir, decoder):
+        DUMP_SETS = [
+            ('colmap', 900, None),   # 0xE496 colmap + 0xE6EE índice
+            ('e346',    64, None),   # puertas
+            ('e3d6',    64, None),   # coleccionables
+            ('e43e',    80, None),   # estructurales
+            ('objs',   288, None),   # 0xE380-0xE49F (enemigos + contadores)
+            ('ont',    768, None),   # name table
+            # vram: pattern+name+color; 0x1B00-0x1FFF = sprite attr viva → fuera
+            ('vram', 0x3800, list(range(0, 0x1B00)) + list(range(0x2000, 0x3800))),
+        ]
+        def make_raw_test(name, size, rng):
             def t():
                 errs = []
                 for idx in range(100):
                     xx = room_name(idx)
-                    raw = open(os.path.join(FIX, fixdir, '%s_%s.bin' % (fixdir, xx)), 'rb').read()
-                    want = decoder(raw)
-                    got = read_lines(os.path.join(dump, '%s_%s.txt' % (prefix, xx)))
-                    if want != got:
-                        errs.append('sala %s: esperado %r != dump %r' % (xx, want, got))
+                    a = open(os.path.join(FIX, name, '%s_%s.bin' % (name, xx)), 'rb').read()[:size]
+                    b = open(os.path.join(dump, '%s_%s.bin' % (name, xx)), 'rb').read()[:size]
+                    idxs = rng if rng else range(min(len(a), len(b)))
+                    nbad = sum(1 for i in idxs if a[i] != b[i])
+                    if nbad:
+                        errs.append('sala %s: %d bytes difieren' % (xx, nbad))
                 return errs
             return t
-        check('doors (tabla 0xE346)', make_table_test('doors', 'e346', decode_doors))
-        check('keys  (tabla 0xE3D6)', make_table_test('keys', 'e3d6', decode_keys))
-        check('items (tabla 0xE3D6)', make_table_test('items', 'e3d6', decode_items))
+        for name, size, rng in DUMP_SETS:
+            check('loader %-6s (100 salas, raw)' % name, make_raw_test(name, size, rng))
 
     # --- 6. vdp: render SCREEN 2 vs referencia --------------------------------
     # Muestra diversa de salas (las 100 tardarían ~2 min; estas cubren las 4

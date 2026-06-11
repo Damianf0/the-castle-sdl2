@@ -39,8 +39,10 @@
 
 ## Fases
 
-> Estado: Fase 0 ✅ (2026-06-11) · Fase 1 ✅ (2026-06-11, título byte-idéntico
-> a openMSX, 7/7 suites) · Fase 2 ← SIGUIENTE
+> Estado: Fase 0 ✅ · Fase 1 ✅ (título byte-idéntico) · Fase 2 NÚCLEO ✅
+> (2026-06-11: room_loader.c = sub_64DD fiel, 700/700 fixtures byte-exactos
+> incl. VRAM completa; falta conmutar el runtime de la maqueta y borrar las
+> tablas horneadas) · Fase 3 ← SIGUIENTE (tras el switchover)
 
 ### Fase 0 — Harness de verificación + saneamiento ✅
 - Runner de comparación: corre el port en modo headless (`CASTLE_SHOT`/dump de

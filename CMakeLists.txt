@@ -26,6 +26,7 @@ set(GAME_SOURCES
     title.c         # Pantalla de título completa con animación (sub_4A4A)
     tiledata.c      # Arrays de tiles cargados desde ROM
     geom.c          # Decoder de geometría de sala portado del disasm (sub_6616+)
+    room_loader.c   # ROOM LOADER fiel (sub_64DD): salas desde el ROM, 700/700 fixtures
     actors.c        # Motor maqueta: jugador/física (a reemplazar en Fase 3)
     player_sprite.c # Sprite real del jugador (ROM 0x9B96)
     # --- Tablas generadas desde tests/fixtures/ (a reemplazar por el decoder

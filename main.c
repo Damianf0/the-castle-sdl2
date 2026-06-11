@@ -41,6 +41,7 @@
 #include "doors_data.h"
 #include "keys_data.h"
 #include "items_data.h"
+#include "room_loader.h"
 
 /* ==========================================================================
  * CONSTANTES
@@ -360,22 +361,30 @@ int main(int argc, char *argv[])
     rom_buf = load_rom(rom_path, &rom_size);
     if (!rom_buf) return 1;
 
-    /* --- Modo dump de estado (harness de tests, sin SDL): vuelca por sala las
-     * tablas que el juego usa, en formato canónico, y sale.
-     *   CASTLE_DUMP=dir → dir/colmap_XX.bin (600 bytes crudos del campo 20x30)
-     *                   + dir/doors_XX.txt  (dcol drow dw dh color count)
-     *                   + dir/keys_XX.txt   (scol srow sw sh color)
-     *                   + dir/items_XX.txt  (scol srow val)
-     * Hoy sale de las tablas horneadas de los fixtures (verde trivial). Cuando
-     * el room loader portado (sub_64DD) las reemplace, este dump debe seguir
-     * byte-idéntico — esa es la red de regresión del port. */
+    /* --- Modo dump de estado (harness, sin SDL): el ROOM LOADER PORTADO
+     * (room_loader.c = sub_64DD fiel) decodifica las 100 salas desde el ROM
+     * y vuelca las tablas RAW — comparables byte a byte contra los dumps de
+     * openMSX en tests/fixtures/:
+     *   colmap_XX.bin (900B: 0xE496 colmap + 0xE6EE índice)
+     *   e346_XX.bin (64B puertas)  e3d6_XX.bin (64B coleccionables)
+     *   e43e_XX.bin (80B estructurales)  objs_XX.bin (288B: 0xE380-0xE49F)
+     *   ont_XX.bin (768B name table desde la VRAM emulada)
+     * Mismo orden de carga que capture_vram.tcl (00..99 BCD, sin limpiar
+     * VRAM entre salas) para reproducir también el estado visual. */
     {
         const char *dd = getenv("CASTLE_DUMP");
         if (dd) {
             char p[512];
+            g_rom = rom_buf; g_rom_size = rom_size;
+            rl_reset();
+            rl_boot_vram();
+            rl_load_room(0x70u);   /* la partida real cargó 0x70 antes de los force-calls */
             for (int idx = 0; idx < 100; idx++) {
                 int xx = ((idx / 10) << 4) | (idx % 10);   /* sala BCD */
                 FILE *f;
+                uint8_t buf[900];
+                rl_load_room((uint8_t)xx);
+
                 snprintf(p, sizeof p, "%s/colmap_%02X.bin", dd, xx);
                 f = fopen(p, "wb");
                 if (!f) {
@@ -383,36 +392,43 @@ int main(int argc, char *argv[])
                     free(rom_buf);
                     return 1;
                 }
-                fwrite(COLMAP[idx], 1, CM_ROWS * CM_COLS, f);
-                fclose(f);
+                for (int i = 0; i < 900; i++) buf[i] = rl_ram_rb((uint16_t)(0xE496u + i));
+                fwrite(buf, 1, 900, f); fclose(f);
 
-                snprintf(p, sizeof p, "%s/doors_%02X.txt", dd, xx);
-                f = fopen(p, "w");
-                for (int i = 0; f && i < DOOR_COUNT[idx]; i++) {
-                    const DoorDef *d = &DOOR_DATA[idx][i];
-                    fprintf(f, "%u %u %u %u %u %u\n",
-                            d->dcol, d->drow, d->dw, d->dh, d->color, d->count);
-                }
-                if (f) fclose(f);
+                snprintf(p, sizeof p, "%s/e346_%02X.bin", dd, xx);
+                f = fopen(p, "wb");
+                for (int i = 0; i < 64; i++) buf[i] = rl_ram_rb((uint16_t)(0xE346u + i));
+                if (f) { fwrite(buf, 1, 64, f); fclose(f); }
 
-                snprintf(p, sizeof p, "%s/keys_%02X.txt", dd, xx);
-                f = fopen(p, "w");
-                for (int i = 0; f && i < KEY_COUNT[idx]; i++) {
-                    const KeySpawn *k = &KEY_DATA[idx][i];
-                    fprintf(f, "%u %u %u %u %u\n",
-                            k->scol, k->srow, k->sw, k->sh, k->color);
-                }
-                if (f) fclose(f);
+                snprintf(p, sizeof p, "%s/e3d6_%02X.bin", dd, xx);
+                f = fopen(p, "wb");
+                for (int i = 0; i < 64; i++) buf[i] = rl_ram_rb((uint16_t)(0xE3D6u + i));
+                if (f) { fwrite(buf, 1, 64, f); fclose(f); }
 
-                snprintf(p, sizeof p, "%s/items_%02X.txt", dd, xx);
-                f = fopen(p, "w");
-                for (int i = 0; f && i < ITEM_COUNT[idx]; i++) {
-                    const ItemSpawn *it = &ITEM_DATA[idx][i];
-                    fprintf(f, "%u %u 0x%02X\n", it->scol, it->srow, it->val);
+                snprintf(p, sizeof p, "%s/e43e_%02X.bin", dd, xx);
+                f = fopen(p, "wb");
+                for (int i = 0; i < 80; i++) buf[i] = rl_ram_rb((uint16_t)(0xE43Eu + i));
+                if (f) { fwrite(buf, 1, 80, f); fclose(f); }
+
+                snprintf(p, sizeof p, "%s/objs_%02X.bin", dd, xx);
+                f = fopen(p, "wb");
+                for (int i = 0; i < 288; i++) buf[i] = rl_ram_rb((uint16_t)(0xE380u + i));
+                if (f) { fwrite(buf, 1, 288, f); fclose(f); }
+
+                snprintf(p, sizeof p, "%s/ont_%02X.bin", dd, xx);
+                f = fopen(p, "wb");
+                for (int i = 0; i < 768; i++) buf[i] = hal_vdp_read_vram((uint16_t)(0x1800u + i));
+                if (f) { fwrite(buf, 1, 768, f); fclose(f); }
+
+                snprintf(p, sizeof p, "%s/vram_%02X.bin", dd, xx);
+                f = fopen(p, "wb");
+                if (f) {
+                    for (int i = 0; i < 0x4000; i++)
+                        fputc(hal_vdp_read_vram((uint16_t)i), f);
+                    fclose(f);
                 }
-                if (f) fclose(f);
             }
-            printf("CASTLE_DUMP: 100 salas -> %s\n", dd);
+            printf("CASTLE_DUMP: 100 salas (decoder portado) -> %s\n", dd);
             free(rom_buf);
             return 0;
         }

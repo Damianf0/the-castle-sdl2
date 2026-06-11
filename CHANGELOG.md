@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-06-11 (2) — Fase 2 (núcleo): ROOM LOADER portado, 700/700 fixtures byte-exactos
+
+### room_loader.c = sub_64DD fiel, instrucción a instrucción
+Las 100 salas decodificadas desde el ROM en runtime, verificadas contra los
+dumps de openMSX (`python tests/run_tests.py`, 11/11):
+- **colmap** 0xE496 (20×30) + tabla 0xE6EE celda→objeto: 900 B × 100 ✓
+- **e346** puertas (val=(variante<<4)|(color+1), persistencia por categoría
+  de columna en 0xE00D+) ✓  **e3d6** coleccionables ✓  **e43e** estructurales
+  (byte 3 = count del tramo) ✓  **objs** 0xE380-0xE49F (enemigos COLL 0xE386 +
+  BAT 0xE416 + contadores) ✓
+- **ont** name table ✓ — valida también el ALOCADOR de tiles por tercio
+  (sub_6B0B: tablas 0xE946/E9A6/EA06, contadores 0xEA66+ desde 0x72/0x1A/0)
+- **vram** pattern+color completas ✓ — espejos (sub_6D5A bit-reverso, orden
+  invertido), corrimiento de 4px (sub_6D75), variantes por clase (llaves 4
+  tiles color de 0x6DC9; puertas/escaleras 2 tiles color de 0x6DCF; enemigos
+  16 o 28/40 tiles ×3 tercios), y el residuo del boot+título (rl_boot_vram).
+
+### Estructura descifrada (lo importante para el resto del port)
+- Streams: 0x7CF2 + 42*fila + 4*col → +0 banda sup, +4 banda inf, +2 cuerpo
+  (2 pasadas que comparten puntero + pasada de objetos sub_69AA).
+- Cursor: EADB=col 0..28 (de a 2), EADC=fila 0..19. Celdas de a pares.
+- sub_5E80: colmap codes desde tablas ROM 0x7780/0x77B6.
+- Tabla de descriptores de tiles 0x7BDA: entradas de 3 bytes (addr, count),
+  índice = código de tile lógico (IY = 0x7BDA + 3*E).
+- Persistencia: bitfields por sala — puertas 0xE00D (21 B/fila de castillo),
+  COLL 0xE0DF (2 B/sala), items 0xE1A7 (2 B/sala), BAT 0xE26F (1 B/sala).
+- HUD: sub_5DC0/5E01/5E5C = score/llaves/corazones al cargar sala (los 6
+  dígitos SIEMPRE — la supresión de ceros del título es porque no se llama).
+
+### Harness
+- CASTLE_DUMP ahora corre el decoder portado y vuelca tablas RAW + VRAM por
+  sala; el runner compara los 7 sets × 100 salas contra fixtures.
+- tools/diff_dump.py para iterar diffs por sala/offset.
+
+Pendiente de Fase 2: conmutar el runtime de la maqueta (colmap_data.c,
+map_real.c, keys/doors/items_data.c → room_loader) y borrar ~580 KB de tablas.
+
 ## 2026-06-11 — Fase 1 COMPLETA: VDP SCREEN 2 fiel; título byte-idéntico a openMSX
 
 ### El criterio de cierre se cumplió
