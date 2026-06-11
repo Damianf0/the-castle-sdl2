@@ -77,25 +77,64 @@
 
 ### Fase 3 — Game loop + jugador (`sub_4064`, `sub_40BB`, `sub_5053`) — EN CURSO
 
-Avance 2026-06-11:
-- ✅ Trazas-oráculo capturadas (`tests/fixtures/traces/`, 6 guiones de input
-  por frame). Física confirmada: 4 px/frame; salto = 8×4px de subida + flote;
-  fase en `0xEAD6` (0=suelo, 1..8 sube, 9+ flota, 0x11=¿caída?); stick en
-  `0xEACB` (GTSTCK), trigger en `0xEACC` con POLL ALTERNADO frame por medio.
-- Mapeo parcial de `sub_40BB` (0x40BB-0x41DE): construye un registro H de
-  flags por frame (bits set/reset según probes de colisión `sub_4515` /
-  `sub_44EF` / `sub_4A05` sobre coordenadas 0xE334/0xE335 ±offsets), maneja
-  empuje de bloques (`sub_4273`, ¡trampolín auto-modificante en 0xEAFA que
-  salta a INC B×2 / DEC B según dirección!) y apertura de puertas
-  (`sub_42FF` → `sub_4325`/`sub_758C`). `sub_47F5` = detector de pendiente
-  (suma ±1 por celda bajo los pies vía `sub_4A38`). La actualización de
-  POSICIÓN no está en 40BB: buscar en `sub_45AD` (movimiento, llamada desde
-  4872/487A) y el render del sprite (sub_6F4D/6EE1 desde 0x62D8/623C).
-- Pendiente: mapear `sub_4515`/`sub_44EF`/`sub_4A05`/`sub_4A38` (probes),
-  `sub_45AD` (mover), `sub_5128` (vsync+input con el poll alternado),
-  `sub_5053` (transición de sala), `sub_4499` (salida por puerta); luego
-  portar a `player.c` sobre el espejo RAM del room_loader y comparar las
-  trazas frame a frame (harness: mismo guion → misma posición/fase).
+Avance 2026-06-11 — MAPA ESTRUCTURAL COMPLETO del núcleo del jugador:
+
+**Arquitectura por frame (game loop sub_4064/4070):**
+1. `sub_4064`: en frames PARES (bit0 de 0xEAC9 == 0, test sub_5D5D) limpia
+   `0xEACB` (stick) y `0xEACC` (trigger).
+2. `sub_5128` → `sub_50E8` × (0xEACA veces, regulador de velocidad; juego =
+   0x70): **GTTRIG(2,1,0) → 0xEACC y GTSTCK(2,1,0) → 0xEACB, escribiendo
+   SOLO en frames pares** (input efectivo a 30Hz — la "alternancia" vista en
+   las trazas es artefacto del punto de muestreo del bp). Además SNSMAT filas
+   0-8 acumuladas con AND en la cola 0xEACD (9 bytes; "any key" del título).
+   En DEMO: keyframes de (0xEAE5): [input,duración]; EACB=byte&0xF,
+   EACC=bit4; fin de stream vs 0x7BC0 → (0xEAE3)=1.
+3. `sub_40BB` = SOLO computa FLAGS de colisión/intención en HL (no mueve):
+   - lee EACB (2-4=der → D=+1,L=3; 6-8=izq → D=-1,L=1), EACC (salto),
+     EAD6 = fase de salto/caída (0=suelo; 1..8 subiendo; 9..0x10 flote;
+     0x11 = caída/terminal).
+   - PROBES de pares de celdas sobre el colmap 0xE496 en (0xE334=col,
+     0xE335=fila) ± offsets — bits del colmap: **0x80=sólido, 0x40=?,
+     0x30=clase, 0x20=ocupado, 0x08=celda-objeto (E6EE>>3 = slot),
+     0x04=trigger coleccionable, 0x01=rampa (E6EE da pendiente)**.
+     Familia: 4515 (par horiz &0x80, fila>0x13 → libre = salida abajo),
+     44EF (par vert vía 4A06: &0x0A pasable-especial sino &0x80),
+     4502 (&0x20), 452D (&0x40), 44C2 (vert &0x30 + modo), 4541 (full+bit3),
+     4566 (&0x30), 49DC (dest de bloque), 47F5 = PENDIENTE bajo los pies
+     (±1 por celda vía 4A38: celda&0x01 → byte E6EE &0x03).
+   - Empuje de bloques: `sub_4273` con TRAMPOLÍN AUTO-MODIFICANTE en 0xEAFA
+     (JP a "INC B; INC B; RET" o "DEC B; RET" según dirección) + sub_468A
+     (lookup de objeto por celda: &0x08 → slot E6EE>>3, bit4 = tabla
+     COLL/BAT) + sub_710B (re-render del bloque movido).
+   - Puertas: `sub_42FF` → sub_4325 (localiza puerta por celda) →
+     sub_758C (apertura real, Fase 5).
+4. `sub_6F5C(DE=HL de 40BB)` = APLICADOR de movimiento + render:
+   - frames IMPARES (5D5D NZ): E334 ±1 según bits D (4=mover,0=dir...),
+     `sub_6F45` (pixel = ((col+1)*8, (fila+4)*8-1)), anim 6F94.
+   - frames PARES (→ 6FF0): detección de SALIDA: E334==0+izq → (0xEAE1)=7;
+     ==0x1C+der → 3; E335==0xFE → 1 (arriba); ==0x14 → 5 (abajo). Si no:
+     medio-paso: H=(E334+1)*2, L=(E335+4)*2 en unidades de 4px; bits D
+     ajustan B/C (celda) y H/L (±1 = ±4px, bit4 = paso doble en rampa);
+     guarda B→E334, C→E335; pixel = H*4, L*4-1. → anim 6F94.
+   - Anim: frame A → patrón sprite A*3*4 (3 planos, sprites 8-10 vía
+     6F27/6EE1). Confirmado vs trazas: caminata der = ciclo 8,6,7
+     (96/72/84); idle=0; salto=5 (60); caída=7 / 9+(EAC9&3).
+5. `sub_5B96` = ¡dispatcher de TRIGGERS de celda! (el famoso sub_5BB0):
+   celda&0x04 → busca el slot en 0xE3D6 por posición y despacha por val:
+   0x20=salida especial, 0x21=salida+reload (llama sub_64DD), 0x22=revela
+   mapa, 0x23+=power-ups/puntos (Fase 5).
+6. `sub_5B5F` = caída (BIT 2,H): frames pares E335+1 con pixel a medio paso,
+   anim 7 / 9+. (0xEAE1) la consume sub_5053 (transición de sala).
+7. Muerte/respawn: sub_518E (limpia fila, posiciones de respawn por sala en
+   tabla ROM 0x5748).
+
+✅ Trazas-oráculo en `tests/fixtures/traces/` (6 guiones por frame).
+
+**Pendiente para portar `player.c`:** leer el bloque 0x4586-0x49B5 (escaleras
+W/S — sub_45AD/4710/4820/4882, daño/muerte), `sub_5053` (transición),
+`sub_4499` (salida por puerta), `0x62D8` (render+triggers por frame) y
+`0x623C`. Portar sobre el espejo RAM del room_loader y validar frame a frame
+contra las trazas (mismo guion → misma posición/fase/patrón).
 - Portar el frame loop real (el esqueleto `game_frame()` ya mapea el orden de
   llamadas) y el movimiento/física del jugador del disasm. Transición de sala
   real (`sub_5053`), no la heurística de bordes de `faithful_play()`.
