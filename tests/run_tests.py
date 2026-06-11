@@ -162,6 +162,33 @@ def run(results):
         return errs
     check('vdp SCREEN 2 (%d salas, pixel-exacto)' % len(VDP_SAMPLE), t_vdp)
 
+    # --- 6b. jugador vs trazas-oráculo (Fase 3) -------------------------------
+    # player.c (sub_40BB + sub_6F5C portados) corre cada guion de input y debe
+    # reproducir frame a frame la traza del juego real (posición, fase de
+    # salto, patrón de animación, input muestreado).
+    def t_player():
+        import glob as _g
+        errs = []
+        for mf in sorted(_g.glob(os.path.join(FIX, 'traces', 'moves_*.txt'))):
+            name = os.path.basename(mf)[6:-4]
+            moves = open(mf).read().strip()
+            out = os.path.join(tempfile.gettempdir(), 'ptrace_%s.txt' % name)
+            env = dict(os.environ, CASTLE_PTRACE=out, CASTLE_MOVES=moves)
+            r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
+                               text=True, timeout=60)
+            if r.returncode != 0 or not os.path.exists(out):
+                errs.append('%s: exe falló' % name)
+                continue
+            want = [l.split() for l in
+                    open(os.path.join(FIX, 'traces', 'trace_%s.txt' % name)) if l.strip()]
+            got = [l.split() for l in open(out) if l.strip()]
+            bad = sum(1 for i in range(min(len(want), len(got))) if want[i] != got[i])
+            os.remove(out)
+            if bad:
+                errs.append('%s: %d/%d frames difieren' % (name, bad, len(want)))
+        return errs
+    check('jugador (trazas frame a frame)', t_player)
+
     # --- 7. título vs oráculo -------------------------------------------------
     # CASTLE_TITLEDUMP corre la intro real (rápido) y vuelca la VRAM en el
     # mismo momento que tools/cap_title.tcl capturó la del juego real en

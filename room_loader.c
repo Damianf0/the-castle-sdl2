@@ -832,6 +832,33 @@ void rl_boot_vram(void)
     boot_tiles();                                   /* game start: sub_4D52 */
 }
 
+/* ===== sub_4325 + sub_758C: puerta presionada por el jugador ===== */
+int rl_door_press(uint8_t b, uint8_t c)
+{
+    uint16_t ix;
+    if (!(R((uint16_t)(0xE496u + c * 30u + b)) & 0x02u)) return 0;
+    if (!(R((uint16_t)(0xE496u + (c + 1u) * 30u + b)) & 0x02u)) return 0;
+    ix = (uint16_t)(0xE346u + R((uint16_t)(0xE6EEu + (c + 1u) * 30u + b)) * 4u);
+
+    /* sub_758C: color = (val&0xF)-1; sin llave -> la puerta queda */
+    {
+        uint8_t color = (uint8_t)((R((uint16_t)(ix + 1u)) & 0x0Fu) - 1u);
+        uint16_t keys = (uint16_t)(0xE337u + color);
+        if (R(keys) == 0u) return 1;
+        R(keys)--;
+        s_5E01();                          /* redibuja iconos de llave del HUD */
+        R(ix) = 0u;                        /* slot marcado ABIERTO */
+        {
+            uint8_t h = R((uint16_t)(ix + 2u)), l = R((uint16_t)(ix + 3u));
+            uint8_t cgl = (uint8_t)(((R((uint16_t)(ix + 1u)) & 0xF0u) >> 4) + 0x3Fu);
+            s_6A7C(h, l, cgl, 0u, 0u);                     /* marco abierto */
+            s_6A7C((uint8_t)(h + 1u), l, cgl, 1u, 0u);
+            s_70A6(h, (uint8_t)(l + 1u), 0u, 0u, 0u);      /* cuerpo -> aire */
+        }
+    }
+    return 1;
+}
+
 /* ===== helpers para el motor (capa maqueta) ===== */
 void rl_cell_gfx(int srow, int scol, uint8_t out[16])
 {

@@ -38,6 +38,7 @@
 #include "blocks_port.h"
 #include "tiledata.h"
 #include "room_loader.h"
+#include "player.h"
 
 /* ==========================================================================
  * CONSTANTES
@@ -428,6 +429,64 @@ int main(int argc, char *argv[])
                 }
             }
             printf("CASTLE_DUMP: 100 salas (decoder portado) -> %s\n", dd);
+            free(rom_buf);
+            return 0;
+        }
+    }
+
+    /* --- Modo traza del jugador (Fase 3, sin SDL): CASTLE_PTRACE=out.txt +
+     * CASTLE_MOVES=guion. Corre el jugador portado (player.c) sobre la sala
+     * 0x70 cargada por el room loader y emite el estado por frame en el MISMO
+     * punto que el bp del oráculo (0x4070: tras limpiar input en frames
+     * pares, antes del poll) — comparable línea a línea con
+     * tests/fixtures/traces/trace_*.txt. */
+    {
+        const char *pt = getenv("CASTLE_PTRACE");
+        if (pt) {
+            const char *mv = getenv("CASTLE_MOVES");
+            FILE *f = fopen(pt, "w");
+            int n;
+            if (!mv || !f) {
+                fprintf(stderr, "CASTLE_PTRACE necesita CASTLE_MOVES\n");
+                if (f) fclose(f);
+                free(rom_buf);
+                return 1;
+            }
+            g_rom = rom_buf; g_rom_size = rom_size;
+            rl_reset();
+            rl_load_room(0x70u);
+            /* alineación con el oráculo: el EAC9 real al iniciar las trazas
+             * cumple EAC9 ≡ 2 (mod 4) — afecta paridad Y bit1 (ciclo anim) */
+            rl_ram_wb(0xEAC9u, 2u);
+            g_plr_px = ((int)rl_ram_rb(0xE334u) + 1) * 8;
+            g_plr_py = ((int)rl_ram_rb(0xE335u) + 4) * 8 - 1;
+            g_plr_frame = 0;
+            n = (int)strlen(mv);
+            for (int i = 0; i <= n; i++) {
+                uint8_t fc = rl_ram_rb(0xEAC9u);
+                uint8_t cb = rl_ram_rb(0xEACBu), cc = rl_ram_rb(0xEACCu);
+                uint8_t stick = 0, trig = 0;
+                char m;
+                if ((fc & 1u) == 0u) { cb = 0u; cc = 0u; }   /* vista post-clear */
+                fprintf(f, "%d %d %d %d %d %d %d %d %d\n", i, g_plr_py, g_plr_px,
+                        g_plr_frame * 12, rl_ram_rb(0xEAD6u), cb, cc,
+                        rl_ram_rb(0xE334u), rl_ram_rb(0xE335u));
+                if (i == n) break;
+                m = mv[i];
+                switch (m) {
+                    case 'R': stick = 3u; break;
+                    case 'L': stick = 7u; break;
+                    case 'U': trig = 1u; break;
+                    case 'D': stick = 3u; trig = 1u; break;
+                    case 'A': stick = 7u; trig = 1u; break;
+                    case 'W': stick = 1u; break;
+                    case 'S': stick = 5u; break;
+                    default: break;
+                }
+                player_frame(stick, trig);
+            }
+            fclose(f);
+            printf("CASTLE_PTRACE: %d lineas -> %s\n", n + 1, pt);
             free(rom_buf);
             return 0;
         }

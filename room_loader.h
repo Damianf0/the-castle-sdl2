@@ -33,4 +33,11 @@ void rl_boot_vram(void);
 void rl_cell_gfx(int srow, int scol, uint8_t out[16]);
 void rl_cell_blank(int srow, int scol);
 
+/* sub_4325 + sub_758C: el jugador presiona contra la celda de campo (b,c).
+ * Si (b,c) y (b,c+1) son celdas de puerta (bit 0x02), intenta abrirla:
+ * con llave del color (0xE337+color) la consume, marca el slot 0xE346 como
+ * abierto y redibuja (marco arriba, cuerpo blanqueado — colmap pasa a aire).
+ * Devuelve 1 si había puerta (el movimiento se bloquea ese frame). */
+int rl_door_press(uint8_t b, uint8_t c);
+
 #endif

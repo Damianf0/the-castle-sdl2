@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-06-11 (4) — Fase 3 (núcleo): jugador portado, 6/6 trazas frame-perfect
+
+### player.c = sub_40BB + sub_6F5C fieles
+El jugador portado reproduce al juego real FRAME A FRAME en las 6 trazas-
+oráculo (456 frames: idle, caminata, salto corto/sostenido/en carrera, pared
+y choque contra puerta cerrada): posición de sprite, fase de salto (0xEAD6),
+patrón de animación e input muestreado, byte-idénticos. Suite `jugador` en
+el runner (11/11).
+
+- `sub_40BB`: flags de movimiento en HL — probes de pares de celdas sobre el
+  colmap del room loader (sólido 0x80, pasable-especial 0x0A, rampa 0x01 con
+  pendiente en 0xE6EE), techo/laterales/paso-doble, fase de salto (0=suelo,
+  1-8 sube, 9-16 flota, 0x11 cae; soltar el trigger en el aire → 0x11).
+- `sub_6F5C`: aplicador — frames PARES: medio paso (celda±1, píxel a mitad,
+  en unidades de 4px) + detección de salida de sala (0xEAE1); IMPARES: snap
+  a celda + celda extra si paso doble (rampas). Animación: patrón = frame*12,
+  ciclos por bits del contador de frame 0xEAC9.
+- Timing de input real (sub_4064/sub_50E8): EACB/EACC se limpian y polean
+  SOLO en frames pares (30Hz efectivo). La traza muestrea como el bp del
+  oráculo (post-clear, pre-poll). Alineación EAC9 ≡ 2 (mod 4).
+- ¡PUERTAS REALES! El bloqueo contra puerta cerrada de la traza `walk` exigió
+  portar sub_4325 (localizar puerta: celdas bit 0x02, slot en el 0xE6EE de la
+  fila inferior — explica el layout 0xA0 arriba / 0xA2 cuerpo) y sub_758C
+  (abrir: consume llave 0xE337+color, slot[0]=0, redibuja marco y blanquea el
+  cuerpo → colmap pasa a aire). `rl_door_press()` en room_loader — media
+  Fase 5 adelantada.
+
+Pendiente Fase 3: escaleras (bloque 0x4586+, vía sub_434A/442D), transición
+de sala (sub_5053), muerte/daño; conmutar faithful_play a player.c.
+
 ## 2026-06-11 (3) — Fase 2 COMPLETA: runtime conmutado al room loader; −580 KB de tablas
 
 ### El juego ahora decodifica TODO desde el ROM en runtime
