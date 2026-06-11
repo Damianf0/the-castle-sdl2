@@ -66,7 +66,6 @@
 
 #include "hal.h"
 #include "game.h"
-#include "screen.h"
 #include "tiledata.h"
 
 /* Forward declarations of globals defined later in this file */
@@ -609,11 +608,31 @@ static void hud_fill_rect(uint8_t col, uint8_t row,
     }
 }
 
+/* Dibuja un número BCD de 3 bytes (6 dígitos) con supresión de ceros a la
+ * izquierda; un valor todo-cero queda totalmente en blanco. */
+static void draw_bcd6(uint16_t base, const uint8_t *bcd)
+{
+    uint8_t digs[6] = {
+        (uint8_t)((bcd[2] >> 4) & 0x0Fu), (uint8_t)(bcd[2] & 0x0Fu),
+        (uint8_t)((bcd[1] >> 4) & 0x0Fu), (uint8_t)(bcd[1] & 0x0Fu),
+        (uint8_t)((bcd[0] >> 4) & 0x0Fu), (uint8_t)(bcd[0] & 0x0Fu),
+    };
+    int started = 0;
+    for (int i = 0; i < 6; i++) {
+        if (digs[i]) started = 1;
+        hal_vdp_write_vram((uint16_t)(base + i),
+                           started ? (uint8_t)(0x47u + digs[i]) : 0x00u);
+    }
+}
+
 void draw_hud(void)
 {
-    uint16_t base1, base2;
-
-    /* --- Static HUD (replicando Z80 sub_4E0C + sub_64C3 ×5) --- */
+    /* --- Static HUD (replicando Z80 sub_4E0C + sub_64C3 ×5) ---
+     * Solo la parte ESTÁTICA que dibuja el boot (sub_4D52): labels, mapa,
+     * logo, separador y overlay NO-MAP/DEMO. Los elementos dinámicos (score,
+     * llaves, corazones) los dibuja sub_5A2D durante el juego —
+     * draw_hud_dynamic() — y NO aparecen en el título (verificado contra
+     * tests/fixtures/vram_title.bin). */
 
     /* 1) MAP area: 7Ã—4 rectángulo en col 17, row 0, tiles 0x0E-0x29 */
     hud_fill_rect(17u, 0u, 7u, 4u, 0x0Eu);
@@ -641,53 +660,6 @@ void draw_hud(void)
     /* 7) "Life" label: col 1, row 3, tiles 0x57-0x58 (2×1) */
     hud_fill_rect(1u, 3u, 2u, 1u, 0x57u);
 
-    /* --- Blank rows 1-2 left area (no longer using static arrays) --- */
-    /* Rows 1-2, cols 0-16 are already 0 from VRAM init. We only
-     * overwrite the dynamic positions below. */
-
-    /* --- Dynamic overlays --- */
-
-    base1 = (uint16_t)(VRAM_NAME_BASE + 1u * 32u);
-    base2 = (uint16_t)(VRAM_NAME_BASE + 2u * 32u);
-
-    /* Score digits: 6 digits en (col 2, row 1) */
-    {
-        uint8_t s2 = g_score[2];
-        hal_vdp_write_vram((uint16_t)(base1 + 2u),
-                           (uint8_t)(0x47u + ((s2 >> 4) & 0x0Fu)));
-        hal_vdp_write_vram((uint16_t)(base1 + 3u),
-                           (uint8_t)(0x47u + (s2 & 0x0Fu)));
-        uint8_t s1 = g_score[1];
-        hal_vdp_write_vram((uint16_t)(base1 + 4u),
-                           (uint8_t)(0x47u + ((s1 >> 4) & 0x0Fu)));
-        hal_vdp_write_vram((uint16_t)(base1 + 5u),
-                           (uint8_t)(0x47u + (s1 & 0x0Fu)));
-        uint8_t s0 = g_score[0];
-        hal_vdp_write_vram((uint16_t)(base1 + 6u),
-                           (uint8_t)(0x47u + ((s0 >> 4) & 0x0Fu)));
-        hal_vdp_write_vram((uint16_t)(base1 + 7u),
-                           (uint8_t)(0x47u + (s0 & 0x0Fu)));
-    }
-
-    /* Hi-score digits: 6 dígitos en (col 10, row 1) */
-    {
-        uint8_t h2 = g_hiscore[2];
-        hal_vdp_write_vram((uint16_t)(base1 + 10u),
-                           (uint8_t)(0x47u + ((h2 >> 4) & 0x0Fu)));
-        hal_vdp_write_vram((uint16_t)(base1 + 11u),
-                           (uint8_t)(0x47u + (h2 & 0x0Fu)));
-        uint8_t h1 = g_hiscore[1];
-        hal_vdp_write_vram((uint16_t)(base1 + 12u),
-                           (uint8_t)(0x47u + ((h1 >> 4) & 0x0Fu)));
-        hal_vdp_write_vram((uint16_t)(base1 + 13u),
-                           (uint8_t)(0x47u + (h1 & 0x0Fu)));
-        uint8_t h0 = g_hiscore[0];
-        hal_vdp_write_vram((uint16_t)(base1 + 14u),
-                           (uint8_t)(0x47u + ((h0 >> 4) & 0x0Fu)));
-        hal_vdp_write_vram((uint16_t)(base1 + 15u),
-                           (uint8_t)(0x47u + (h0 & 0x0Fu)));
-    }
-
     /* Text overlays en MAP area (replicando Z80 sub_4E0C + sub_4E60/4E76) */
     {
         if (g_intro_active) {
@@ -701,6 +673,21 @@ void draw_hud(void)
         }
         /* else: gameplay normal — map tiles de hud_fill_rect se mantienen */
     }
+}
+
+/* Parte DINÁMICA del HUD (sub_5A2D): score, hi-score, llaves y corazones.
+ * Se llama por frame durante el juego, no en el título. */
+void draw_hud_dynamic(void)
+{
+    uint16_t base1 = (uint16_t)(VRAM_NAME_BASE + 1u * 32u);
+    uint16_t base2 = (uint16_t)(VRAM_NAME_BASE + 2u * 32u);
+
+    /* Score digits: 6 dígitos BCD con supresión de ceros a la izquierda.
+     * TODO Fase 5: validar contra sub_5A2D con score != 0. */
+    draw_bcd6((uint16_t)(base1 + 2u), g_score);
+
+    /* Hi-score digits: 6 dígitos en (col 10, row 1) */
+    draw_bcd6((uint16_t)(base1 + 10u), g_hiscore);
 
     /* Key icons: row 2 col 3+ (0x01-0x0C) */
     {
@@ -724,9 +711,6 @@ void draw_hud(void)
             hal_vdp_write_vram((uint16_t)(base3 + 3u + i), 0x0Du);
         }
     }
-
-    /* Map/logo tiles at cols 17-30 for rows 1-2 already written by
-     * hud_fill_rect above — no need to re-write. */
 }
 
 /* ==========================================================================
@@ -761,10 +745,12 @@ void camera_draw_string(uint8_t col, uint8_t row,
         uint8_t tile;
         if (byte == 0x20u) {
             tile = 0u;  /* espacio */
-        } else if (byte >= 0x30u) {
-            tile = (uint8_t)(byte - 0x30u + 0x5Du);  /* Z80: chr - 0x30 + 0x5D */
         } else {
-            tile = (uint8_t)(byte - 0x41u + tile_base);  /* fallthrough chr < 0x30 */
+            /* sub_62B0 fiel: el caso dígito (chr < 0x3A) hace SUB 0x30 +
+             * ADD 0x5D y CAE (sin RET) en el caso letra SUB 0x41 + ADD C. */
+            uint8_t a = byte;
+            if (a < 0x3Au) a = (uint8_t)(a - 0x30u + 0x5Du);
+            tile = (uint8_t)(a - 0x41u + tile_base);
         }
 
         /* Escribir tile en la name table */

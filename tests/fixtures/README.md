@@ -20,8 +20,12 @@ BCD (00..99, hi=fila, lo=columna del castillo 10x10).
 | `vram/` | 100 | 16384 | VRAM completa por sala (pattern/color/name/sprites) | `capture_vram.tcl` |
 | `ram.bin` | 1 | 4096 | RAM 0xE000-0xF000 en gameplay (diagnóstico) | `dump.tcl` |
 | `vram.bin` | 1 | 16384 | VRAM en gameplay sala 0x70 | `dump.tcl` |
-| `vram_demo.bin` | 1 | 16384 | VRAM durante el demo mode | — |
-| `vram_title_init.bin` | 1 | 16384 | VRAM al inicio de la pantalla de título (referencia Fase 1) | — |
+| `vram_title.bin` | 1 | 16384 | VRAM del TÍTULO real en la entrada a `sub_4AD7` (fase "esperar input": logo en (9,6) + créditos completos). Oráculo de la Fase 1 | `cap_title.tcl` |
+
+> Eliminados 2026-06-11: `vram_title_init.bin` y `vram_demo.bin` — NO eran
+> capturas de openMSX sino dumps del propio port (los escribía
+> `tiles_dump_vram()` en title.c con el modelo de video viejo). Contaminados;
+> el oráculo real del título es `vram_title.bin`.
 | `castle_objects.json` | 1 | — | Censo decodificado de `objs/`: 148 enemigos, 156 coleccionables, 181 estructurales | `parse_all.py` |
 
 Verificado 2026-06-11: los generadores `tools/gen_*.py` reproducen

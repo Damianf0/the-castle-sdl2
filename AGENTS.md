@@ -39,10 +39,11 @@ python tests/run_tests.py --no-build
 - Core logic (`the_castle.c`, `room.c`, `camera.c`, etc.) calls only `hal.h` + `game.h`.
 - To add a platform: write `hal_<platform>.c`, add to CMakeLists.txt.
 
-## Color / Pixel Format
+## Video (Fase 1 — VDP fiel, 2026-06-11)
 
-- **`g_palette[16]`** in `screen.c` is packed at runtime via `SDL_MapRGB()` in `hal_sdl2.c:hal_init()` — never hardcode `0xAARRGGBB` literals for the palette. SDL_PIXELFORMAT_RGBA8888 on LE needs byte order R,G,B,A (uint32_t = R | (G<<8) | (B<<16) | (A<<24), i.e. `0xAABBGGRR`), but always use `SDL_MapRGB`/`SDL_MapRGBA` to be platform-safe.
-- Sprites and border color also use `g_palette[color_idx]` directly, not manual packing.
+- **Un solo modelo de video**: VRAM emulada de 16KB + registros en `hal_sdl2.c`. `hal_vdp_write_vram`/`read_vram` van DIRECTO a `vram[]`; `vdp_render()` interpreta SCREEN 2 con **3 tercios reales** (pattern 0x0000+t*0x800, color 0x2000+t*0x800, name 0x1800). Color 0 = backdrop (reg 7). `screen.c` (compositor plano) fue eliminado.
+- **`g_palette[16]`** (static en `hal_sdl2.c`) se empaqueta con `SDL_MapRGB()` — nunca hardcodear literales `0xAARRGGBB`.
+- Verificación: suite `vdp` (render == referencia Python, pixel-exacto) y suite `título` (VRAM del port == captura openMSX `vram_title.bin`, byte-exacto) en `tests/run_tests.py`.
 
 ## Key Gotchas
 
@@ -53,27 +54,20 @@ python tests/run_tests.py --no-build
 - **`LD HL,(0xF3CD)`** loads `GRPATR` (sprite attribute table base, set by INIGRP/SETGRP at init). Used in `sub_6EAE` to calculate sprite entry address.
 - **`sub_4B07`** in Z80: positions sprites 8-13 at pixel (Y=0, X=0) with blank pattern — does NOT write to name table. No SDL equivalent (commented out in `intro_prepare_vram()` and `intro_cleanup()`).
 - **Init order matters:** `hal_init` → `tiles_load_from_rom` → `game_init` → `enemies_init` → `particles_init` → `doors_init` → `music_init` → `camera_init` → `main_loop`.
-- **`char_to_tile` Z80 formula (sub_62B0):** `chr - 0x30 + 0x5D` for ALL chr ≥ 0x30 (digits AND letters). `RET NC` means the letter case (`SUB 0x41, ADD C`) is ONLY for chr < 0x30 (punctuation). Two copies: `title.c:char_to_tile()` and `camera.c:camera_draw_string()` — both now match the Z80. `room.c` room scripts use a DIFFERENT encoding scheme.
-- **Credit text tile map (Z80 char_to_tile, thirds 1-2):**
-  - `'0'..'9'` → VRAM tiles **0x5D..0x66**
-  - `'A'..'Z'` → VRAM tiles **0x6E..0x87**
-  - `'['` → VRAM tile **0x88** (shows as "(c)" — custom edit)
-  - `'\'` → VRAM tile **0x89** (shows as "?" — custom edit)
-  - Digits loaded from ROM **0x86F6** (same data as ANIM_BG) by `load_credit_digit_tiles()` in title.c
-  - Letters loaded from ROM **0x8796** (28 tiles, same data as font/WALLS) by `load_credit_font_tiles()` in title.c — count=28 includes the two custom symbol tiles at 0x8936 (`[` and `\`)
-  - Both written to VRAM thirds 1-2 ONLY, leaving third 0's WALLS data intact
-- **No embedded digit patterns.** The old `FONT_DIGITS` const arrays in `tiles.c` removed — digits come from ROM 0x86F6.
-- **Title screen loads BG1_MAIN (4 tiles @ 0x8056) to VRAM 0x73-0x76** via `load_title_border_tiles()` after `intro_prepare_vram()` — the logo draws from `tile_base=0x73`.
-- **`tiles_reload_walls_and_anim()`** reads from `g_tiles` (not ROM), writes WALLS 0x59-0x72 + ANIM_BG 0x47-0x50. Does NOT touch 0x73-0x76 (wall variants stay as loaded by `TILE_MAP` at init; title screen overrides them with BG1_MAIN border).
+- **`char_to_tile` (sub_62B0) — CORREGIDO 2026-06-11 contra disasm + oráculo:** el caso dígito (`chr < 0x3A`: `SUB 0x30; ADD 0x5D`) CAE sin RET en el caso letra (`SUB 0x41; ADD A,C`). Neto: dígito → `chr-0x30+0x1C+base`, letra → `chr-0x41+base`. El "RET NC" documentado antes NO existe (verificado contra `vram_title.bin`). Dos copias: `title.c:char_to_tile()` y `camera.c:camera_draw_string()`.
+- **Tiles de texto del título (thirds 1-2, base C=0x01):** `'A'..'Z'` → 0x01-0x1A, `'['` → 0x1B, `'0'..'9'` → 0x1D-0x26. Cargados por `load_title_tiles()` fiel a sub_4A4A: font 28 tiles (descriptor 0x7BD0 → ROM 0x8796) a 0x01+, dígitos 10 (descriptor 0x7BCE → 0x86F6) a 0x1D+, SOLO tercios 1-2 (sub_4E8E/sub_4E91). El HUD usa base C=0x59 (letras sobre WALLS, tercio 0).
+- **Tabla de descriptores 0x7BC0:** words simples (direcciones ROM), SIN formato compacto: 0x7BC0=0x7E96 hudlogo, 0x7BC2=0x8056 logo-izq, 0x7BC4=0x8286 logo-der, 0x7BC6=0x84B6 map, 0x7BC8=0x8676, 0x7BCA=0x86B6, 0x7BCC=0x86D6, 0x7BCE=0x86F6 dígitos, 0x7BD0=0x8796 font, 0x7BD2=0x9A56 llave, 0x7BD4=0x9A76 corazón, 0x7BD6=0x9A86 separador, 0x7BDA=0x8956 blank. Loader: `tiles_load_from_desc()` (= sub_64AB; dest `(tercio<<8)|tile`, encadenable).
+- **Logo del título**: 70 tiles 0x73-0xB8 cargados POR TERCIO (3×) desde los descriptores 0x7BC2/0x7BC4 (datos contiguos en 0x8056). Posición final del logo: name table (col 9, fila 6), bloque 14×5 (mitades 0x73+/0x96+).
+- **Llaves HUD (sub_4EA2):** 12 tiles 0x01-0x0C; patrón de (0x7BD2)=0x9A56, byte de color DIRECTO de la tabla ROM **0x6DC9** = {0x41,0x81,0xD1,0x21,0x71,0xA1} (ink 4,8,13,2,7,10 — ¡el color 1 es 8, no 6!).
+- **Tile 0x00 no se carga en el boot**: conserva el estado INIGRP del BIOS (patrón 0, color 0x01).
+- **HUD estático vs dinámico:** `draw_hud()` = solo lo que dibuja el boot (labels/map/logo/NO-MAP); score/llaves/corazones = `draw_hud_dynamic()` (sub_5A2D, por frame de juego). En el título NO se ven (oráculo).
 - **Stubs in `main.c`:** `update_roller_by_pos()` and `update_bat_by_slot()` are temporary wrappers in `main.c` that `doors.c` depends on.
 - **Two map layers:** `g_map[0x400]` (20×30 collision map) and `g_tilemap[]` (30×30 visual map).
 - **BCD room coords:** `g_room_x` uses BCD (hi-nibble=row, lo-nibble=column). Arithmetic is DAA-style, not binary.
 - **Tiles loaded from ROM at runtime.** `tiles.c` reads raw 16-byte interleaved tiles from the game ROM using `TILE_MAP[]`. Hardcoded `VRAM_TILES[]` and `vram_tiles.c` removed.
 - **Tile data is NOT compressed.** All verified tiles in ROM are raw 16-byte format (pattern/color interleaved).
-- **ROM tile descriptor table at 0x7BC0+:** First 4 entries store full 16-bit ROM addresses; entries 0x7BC8+ use compact format (hi byte = context, lo byte = stored). `load_tileset()` in `room.c` handles both.
-- **Title logo (70 tiles, 0x73-0xB8) comes entirely from ROM 0x8056.** First 4 tiles (0x73-0x76) are the decorative border; remaining 66 tiles (0x77-0xB8, from ROM 0x8096) form the logo body. The same ROM data is used at VRAM 0x27-0x42 as BG1_MAIN tileset during gameplay (first 28 tiles only).
-- **Gameplay wall tiles 0x73-0x76** are stored separately after the main WALLS block: 0x73-0x74 @ 0x89C6, 0x75-0x76 @ 0x8966 (not contiguous with the 26-tile WALLS range 0x59-0x72 @ 0x8796). These are loaded to `g_tiles[]` at init, but VRAM is overwritten by the logo border during the title screen.
-- **Per-third tile model:** tiles are loaded per-screen, not per `TILE_MAP`. Each of the 3 screen thirds can have different tile data at the same VRAM index. `TILE_MAP` only provides the "default" data for third 0; title screen and room loads write to individual thirds independently.
+- (OBSOLETO 2026-06-11: la afirmación previa de que la tabla 0x7BC0 usa "formato compacto" desde 0x7BC8 era FALSA — son words simples, ver la entrada de descriptores arriba. La historia del "BG1_MAIN border 0x73-0x76" del título también era incorrecta: el logo completo se carga por tercio desde los descriptores 0x7BC2/0x7BC4.)
+- **Per-third tile model (REAL, verificado contra dumps):** cada tercio tiene pattern/color table propia y el juego lo explota (en gameplay difieren 150-220 tiles entre tercios). `tiles_load_from_rom` (boot) duplica el tileset a los 3 tercios; los loads específicos (título, salas) escriben tercios individuales vía `tiles_load_from_desc`.
 - **No external BIOS ROM dependency.** `tiles_load_bios_rom()` has been removed. All tiles come from the game ROM.
 - **`vram_tiles.c` deleted** — removed from build.
 

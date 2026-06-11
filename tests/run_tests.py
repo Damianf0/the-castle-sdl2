@@ -15,6 +15,9 @@ Qué verifica:
   4. keys        : keys_XX.txt == decode de e3d6/ (val>=0x2A, color=val-0x2A, 2x2).
   5. items       : items_XX.txt == decode de e3d6/ (0x22<=val<=0x29).
   6. screenshot  : CASTLE_SHOT produce un BMP válido y no uniforme (smoke).
+  7. vdp         : render SCREEN 2 del exe (CASTLE_VRAMIN) == renderer de
+                   referencia Python, pixel-exacto, sobre una muestra de
+                   dumps de VRAM reales (tests/fixtures/vram/).
 
 Hoy los dumps salen de tablas generadas DESDE los fixtures, así que 2-5 son
 verdes por construcción. El punto es que cuando el room loader portado
@@ -69,6 +72,49 @@ def decode_items(e3d6):
 def read_lines(path):
     with open(path) as f:
         return [ln.strip() for ln in f if ln.strip()]
+
+# Paleta TMS9918A canónica (la misma de hal_sdl2.c y tools/render_vram.py)
+TMS_PAL = [(0,0,0),(0,0,0),(33,200,66),(94,220,120),(84,85,237),(125,118,252),
+           (212,82,77),(66,235,245),(252,85,84),(255,121,120),(212,193,84),
+           (230,206,128),(33,176,59),(201,91,186),(204,204,204),(255,255,255)]
+
+def render_screen2_reference(vram_path):
+    """Render SCREEN 2 de referencia: name table 0x1800, pattern/color por
+    tercio, color 0 = backdrop (negro, reg7=0x01 en CASTLE_VRAMIN).
+    Devuelve filas de tuplas (r,g,b), 192x256."""
+    v = open(vram_path, 'rb').read()
+    backdrop = TMS_PAL[1]
+    fb = [[None] * 256 for _ in range(192)]
+    for row in range(24):
+        toff = (row >> 3) * 0x800
+        for col in range(32):
+            tile = v[0x1800 + row * 32 + col]
+            for yy in range(8):
+                p = v[toff + tile * 8 + yy]
+                c = v[0x2000 + toff + tile * 8 + yy]
+                fg = TMS_PAL[c >> 4] if c >> 4 else backdrop
+                bg = TMS_PAL[c & 15] if c & 15 else backdrop
+                for xx in range(8):
+                    fb[row * 8 + yy][col * 8 + xx] = fg if p & (0x80 >> xx) else bg
+    return fb
+
+def compare_bmp_to_reference(bmp_path, ref):
+    """Compara un BMP 32bpp de SDL (BGRX, bottom-up) contra el render de
+    referencia. Devuelve nº de píxeles distintos."""
+    d = open(bmp_path, 'rb').read()
+    off = struct.unpack_from('<I', d, 10)[0]
+    w, h = struct.unpack_from('<ii', d, 18)
+    if (w, h) != (256, 192):
+        return 256 * 192
+    bad = 0
+    for y in range(192):
+        rowoff = off + (191 - y) * 256 * 4
+        rowref = ref[y]
+        for x in range(256):
+            i = rowoff + x * 4
+            if (d[i+2], d[i+1], d[i]) != rowref[x]:
+                bad += 1
+    return bad
 
 def run(results):
     def check(name, fn):
@@ -138,7 +184,55 @@ def run(results):
         check('keys  (tabla 0xE3D6)', make_table_test('keys', 'e3d6', decode_keys))
         check('items (tabla 0xE3D6)', make_table_test('items', 'e3d6', decode_items))
 
-    # --- 6. screenshot smoke --------------------------------------------------
+    # --- 6. vdp: render SCREEN 2 vs referencia --------------------------------
+    # Muestra diversa de salas (las 100 tardarían ~2 min; estas cubren las 4
+    # esquinas del castillo, salas con/sin puertas y la sala inicial 0x70).
+    VDP_SAMPLE = ['00', '09', '18', '27', '35', '46', '54', '63', '70', '81', '99']
+    def t_vdp():
+        errs = []
+        with tempfile.TemporaryDirectory(prefix='castle_vdp_') as d:
+            for xx in VDP_SAMPLE:
+                fix = os.path.join(FIX, 'vram', 'vram_%s.bin' % xx)
+                bmp = os.path.join(d, 'vdp_%s.bmp' % xx)
+                env = dict(os.environ, CASTLE_VRAMIN=fix, CASTLE_SHOT=bmp)
+                r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
+                                   text=True, timeout=60)
+                if r.returncode != 0 or not os.path.exists(bmp):
+                    errs.append('sala %s: exe falló (%d)' % (xx, r.returncode))
+                    continue
+                bad = compare_bmp_to_reference(bmp, render_screen2_reference(fix))
+                if bad:
+                    errs.append('sala %s: %d píxeles difieren' % (xx, bad))
+        return errs
+    check('vdp SCREEN 2 (%d salas, pixel-exacto)' % len(VDP_SAMPLE), t_vdp)
+
+    # --- 7. título vs oráculo -------------------------------------------------
+    # CASTLE_TITLEDUMP corre la intro real (rápido) y vuelca la VRAM en el
+    # mismo momento que tools/cap_title.tcl capturó la del juego real en
+    # openMSX (entrada a sub_4AD7, fase "esperar input"). Byte-exacto en
+    # pattern/name/color; los sprites no se comparan (el port no los usa aún).
+    def t_title():
+        fix = os.path.join(FIX, 'vram_title.bin')
+        with tempfile.TemporaryDirectory(prefix='castle_title_') as d:
+            out = os.path.join(d, 'title.bin')
+            env = dict(os.environ, CASTLE_TITLEDUMP=out, CASTLE_FAST='1')
+            r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
+                               text=True, timeout=300)
+            if r.returncode != 0 or not os.path.exists(out):
+                return ['exe falló (%d): %s' % (r.returncode, r.stderr[:300])]
+            a = open(fix, 'rb').read()
+            b = open(out, 'rb').read()
+            errs = []
+            for nm, lo, hi in [('pattern', 0x0000, 0x1800),
+                               ('name',    0x1800, 0x1B00),
+                               ('color',   0x2000, 0x3800)]:
+                bad = sum(1 for i in range(lo, hi) if a[i] != b[i])
+                if bad:
+                    errs.append('%s table: %d bytes difieren' % (nm, bad))
+            return errs
+    check('título (VRAM == openMSX en sub_4AD7)', t_title)
+
+    # --- 8. screenshot smoke --------------------------------------------------
     # Usa el modo CASTLE_ACTORS (render fiel de sala + actores). El CASTLE_SHOT
     # "pelado" hoy rinde uniforme porque el render de fondo solo se activa con
     # g_actors_on — eso lo resuelve la Fase 1 (VDP fiel) y entonces se podrá

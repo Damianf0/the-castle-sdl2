@@ -39,7 +39,10 @@
 
 ## Fases
 
-### Fase 0 — Harness de verificación + saneamiento
+> Estado: Fase 0 ✅ (2026-06-11) · Fase 1 ✅ (2026-06-11, título byte-idéntico
+> a openMSX, 7/7 suites) · Fase 2 ← SIGUIENTE
+
+### Fase 0 — Harness de verificación + saneamiento ✅
 - Runner de comparación: corre el port en modo headless (`CASTLE_SHOT`/dump de
   estado) y diffea contra fixtures (`colmap_XX.bin`, `e346/e3d6_XX.bin`, name
   tables, trazas de salto/enemigos). Un comando = pasa/falla.
@@ -49,7 +52,7 @@
   es `build.ps1` con glob). Una sola definición de fuentes.
 - Branch/tag del estado actual como referencia jugable antes de demoler.
 
-### Fase 1 — VDP SCREEN 2 fiel (arregla intro: tiles + paleta)
+### Fase 1 — VDP SCREEN 2 fiel (arregla intro: tiles + paleta) ✅
 - UN solo modelo de video: VRAM emulada de 16 KB + registros VDP. Render
   SCREEN 2 con **3 tercios reales** (pattern table 0x0000-0x17FF y color table
   0x2000-0x37FF completas, tercio según fila), name table 0x1800, sprites TMS

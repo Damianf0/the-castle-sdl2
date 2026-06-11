@@ -64,6 +64,7 @@ void    tiles_vram_from_rom(uint32_t rom_file_off, uint8_t vram_start,
                             uint8_t count);
 void    tiles_reload_all(void);
 void    tiles_reload_walls_and_anim(void);
+void    tiles_load_from_desc(uint16_t *desc_addr, uint16_t *dest, uint8_t count);
 void    tiles_animate(uint8_t frame_counter);
 void    tiles_dump_vram(const char *label);
 uint8_t tiles_vram_idx_blank(void);
@@ -141,6 +142,7 @@ void camera_update(void);
 void scroll_update(void);
 void render_background(void);
 void draw_hud(void);
+void draw_hud_dynamic(void);
 void camera_draw_string(uint8_t col, uint8_t row, uint16_t rom_str_addr,
                         uint8_t tile_base, uint8_t delay_frames);
 extern uint8_t g_music_transpose_fine;

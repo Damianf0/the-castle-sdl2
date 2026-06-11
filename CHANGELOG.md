@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-06-11 — Fase 1 COMPLETA: VDP SCREEN 2 fiel; título byte-idéntico a openMSX
+
+### El criterio de cierre se cumplió
+`tests/run_tests.py` 7/7, incluyendo dos suites nuevas:
+- **vdp**: render del exe (CASTLE_VRAMIN) == renderer de referencia Python,
+  pixel-exacto, sobre 11 dumps de VRAM reales.
+- **título**: la VRAM del port al entrar a la fase "esperar input" ==
+  `vram_title.bin` capturado de openMSX con bp en sub_4AD7 (`cap_title.tcl`),
+  byte-exacto en pattern/name/color (de 1046 diffs iniciales a 0).
+
+### Video (causa raíz de los tiles rotos de la intro)
+- UN solo modelo: VRAM 16KB + registros; `vdp_render()` lee SCREEN 2 con los
+  3 tercios reales; color 0 = backdrop. ELIMINADOS: `screen.c` (compositor
+  plano que colapsaba los tercios — el flatten del 2026-05-24 era incompatible
+  con cómo el juego usa SCREEN 2), ruteo de VRAM a buffers paralelos.
+- En gameplay los tercios difieren en 150-220 tiles (verificado contra
+  `vram_XX.bin`) — el modelo plano nunca pudo ser correcto.
+
+### Título portado FIEL del disasm (sub_4A4A y rutinas hijas)
+- `sub_62B0` (char→tile): el caso dígito CAE en el caso letra (sin RET).
+  El "fix Z80" del 2026-05-18 inventaba un RET NC — revertido. Créditos:
+  letras 0x01+, dígitos 0x1D+ (base C=1); HUD: base C=0x59.
+- `sub_64AB` portado como `tiles_load_from_desc()`: tabla de descriptores
+  0x7BC0 = words simples (el "formato compacto" documentado era falso).
+- Carga del título fiel: logo 70 tiles por tercio (desc 0x7BC2/0x7BC4);
+  font+dígitos SOLO a tercios 1-2 (sub_4E8E/4E91). El load viejo pisaba
+  las letras del tileset de juego (0x5D-0x72 tercio 0) — eso era la
+  corrupción visible.
+- `sub_4AE2` fiel: FILVRM pattern+0x400=0x00 / color+0x400=0x11.
+- Animación del logo fiel (sub_4B54/4B7F/4BC4): 1ª pasada deja rastro,
+  2ª lo limpia retrazando, seq2 sube limpiando la fila inferior; final (9,6).
+- Llaves HUD (sub_4EA2): color directo de la tabla ROM 0x6DC9 — el color
+  lógico 1 es ink 8 (rojo), no 6; corregido también KEY_COLMSX.
+- Tile 0x00 no se carga (estado INIGRP del BIOS: color 0x01).
+- HUD partido: `draw_hud()` estático (boot) vs `draw_hud_dynamic()`
+  (sub_5A2D, por frame); el título no muestra score/llaves/corazones.
+
+### Harness
+- `CASTLE_VRAMIN` + `CASTLE_TITLEDUMP` + `CASTLE_FAST` (modos headless).
+- `tools/cap_title.tcl` (oráculo del título), `tools/diff_vram.py`.
+- Borrados los pseudo-fixtures `vram_title_init.bin`/`vram_demo.bin`: los
+  generaba el propio port (tiles_dump_vram), no openMSX. Contaminados.
+
 ## 2026-06-09 (3) — Collision now uses the ROM's REAL tilemap (0xE496), no more pixel heuristics
 
 ### The deep fix (user demanded: "understand the ROM, stop guessing")

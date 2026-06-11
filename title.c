@@ -54,6 +54,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "hal.h"
 #include "game.h"
@@ -81,9 +83,9 @@
 /* Número de ciclos del demo antes de empezar el juego automáticamente */
 #define DEMO_CYCLES   3u
 
-/* Filas de pantalla del logo (viewport de 10×10 empieza en fila 4) */
+/* Límites de dibujo del logo (sub_4BE1: fila < 4 o >= 0x18 se saltea) */
 #define LOGO_ROW_TOP     4u
-#define LOGO_ROW_BOTTOM  23u
+#define LOGO_ROW_BOTTOM  24u
 
 /* ==========================================================================
  * ROM ACCESS
@@ -116,24 +118,24 @@ static void vdp_clear_row(uint8_t row)
 }
 
 /* ==========================================================================
- * sub_62B0 — Codificación de carácter a tile (Z80 match)
+ * sub_62B0 — Codificación de carácter a tile (verificado contra el disasm Y
+ * contra la VRAM real del título de openMSX, tests/fixtures/vram_title.bin)
  *
- * 0x20 = espacio → tile 0
- * 0x30+ = cualquier carácter (dígito o letra) → tile = chr - 0x30 + 0x5D
- *                    (Z80: SUB 0x30; ADD 0x5D; RET NC)
- * otro → tile = chr - 0x41 + tile_base (fallthrough para chr < 0x30)
+ *   CP 0x20 → espacio = tile 0
+ *   CP 0x3A; JR NC → si chr < 0x3A (dígitos): SUB 0x30; ADD 0x5D y CAE
+ *   (¡sin RET!) en el caso letra: SUB 0x41; ADD A,C
  *
- * Credit character → tile encoding:
- *   '0'..'9' → tiles 0x5D..0x66
- *   'A'..'Z' → tiles 0x6E..0x87
- *   '['      → tile 0x88
+ * O sea: dígito → chr - 0x30 + 0x5D - 0x41 + base = chr - 0x30 + 0x1C + base
+ *        letra  → chr - 0x41 + base
+ * Con base 0x01 (créditos): 'A'..'Z' → 0x01..0x1A, '0'..'9' → 0x1D..0x26,
+ * '[' → 0x1B — exactamente lo que muestra el oráculo.
  * ========================================================================== */
 static uint8_t char_to_tile(uint8_t chr, uint8_t tile_base)
 {
-    (void)tile_base;
     if (chr == 0x20u) return 0x00u;
-    if (chr >= 0x30u) return (uint8_t)(chr - 0x30u + 0x5Du);
-    return (uint8_t)(chr - 0x41u + tile_base);
+    uint8_t a = chr;
+    if (a < 0x3Au) a = (uint8_t)(a - 0x30u + 0x5Du);  /* dígito: cae al caso letra */
+    return (uint8_t)(a - 0x41u + tile_base);
 }
 
 /* ==========================================================================
@@ -208,11 +210,30 @@ static void curtain_wipe(void)
     }
 }
 
+/* Carga de tiles del título — FIEL a sub_4A4A (0x4A55-0x4A81):
+ *
+ *   Por cada tercio D=0,1,2:  HL=0x7BC2, DE=(D<<8)|0x73, B=0x23,
+ *     CALL sub_64AB ×2  → logo: mitad izq (desc 0x7BC2→0x8056, 35 tiles a
+ *     0x73-0x95) + mitad der (desc 0x7BC4→0x8286, 35 tiles a 0x96-0xB8).
+ *   CALL sub_4E8E (DE=0x0101) y luego DE=0x0201, CALL sub_4E91:
+ *     font 28 tiles (desc 0x7BD0→0x8796) a 0x01-0x1C + dígitos 10 tiles
+ *     (desc 0x7BCE→0x86F6) a 0x1D-0x26, en los tercios 1 y 2 SOLAMENTE.
+ *   El tileset de juego del tercio 0 (0x00-0x7F, cargado en el boot) queda. */
 static void load_title_tiles(void)
 {
-    tiles_vram_from_rom(0x8056u, 0x73u, 70u);
-    tiles_vram_from_rom(0x86F6u, 0x5Du, 10u);
-    tiles_vram_from_rom(0x8796u, 0x6Eu, 28u);
+    for (uint16_t third = 0u; third < 3u; third++) {
+        uint16_t desc = 0x7BC2u;
+        uint16_t dest = (uint16_t)((third << 8) | 0x73u);
+        tiles_load_from_desc(&desc, &dest, 0x23u);
+        tiles_load_from_desc(&desc, &dest, 0x23u);
+    }
+    for (uint16_t third = 1u; third <= 2u; third++) {
+        uint16_t desc = 0x7BD0u;
+        uint16_t dest = (uint16_t)((third << 8) | 0x01u);
+        tiles_load_from_desc(&desc, &dest, 0x1Cu);   /* font A-Z + símbolos */
+        desc = 0x7BCEu;
+        tiles_load_from_desc(&desc, &dest, 0x0Au);   /* dígitos 0-9 → 0x1D+ */
+    }
 }
 
 /* ==========================================================================
@@ -288,113 +309,80 @@ static void logo_erase_at(uint8_t col, uint8_t row)
 }
 
 /* ==========================================================================
- * sub_4B7F — Animar logo con una secuencia de coordenadas
+ * sub_4B54 / sub_4B7F / sub_4B93 — animación del logo, FIEL al disasm.
  *
- * Itera la secuencia ROM en HL:
- *   sub_4BA6: leer (col, row) = (D, E)
- *     Si D == 0x80 → JR sub_4B93 (fin: retroceder 2 entradas, redibujar)
- *   sub_4BAF: dibujar logo en (D, E)
- *   sub_5128: esperar 1 frame (+ comprobar fire)
- *     Si fire pulsado → NZ → g_intro_active=0, RET
- *   sub_4BC4: borrar posición anterior, dibujar en nueva
- *   Repetir
- *
- * Retorna:
- *   Z=1 si el logo llegó al final de la secuencia (completó el movimiento)
- *   NZ  si el jugador pulsó fire (salir del intro)
+ * sub_4B54 (1ª pasada, seq1): dibuja en cada posición SIN borrar — deja un
+ *   rastro deliberado (efecto de barrido). Al sentinel 0x80 NO redibuja.
+ * sub_4B7F con C=0 (2ª pasada, seq1): dibuja → frame → BORRA la misma
+ *   posición (sub_4BC4 C=0 = sprite de tile 0x00). Al retrazar el rastro de
+ *   la 1ª pasada lo va limpiando. Al sentinel (sub_4B93): retrocede a la
+ *   última entrada y la dibuja PERMANENTE.
+ * sub_4B7F con C=1 (seq2, núcleo): dibuja → frame → limpia 14 celdas en la
+ *   fila row+4 (sub_4BC4 C=1 → sub_628C; el logo sube 1 fila por paso y la
+ *   fila que desocupa abajo se borra). Final: logo queda en (9,6).
  * ========================================================================== */
-static bool animate_logo_sequence(uint16_t seq_addr, bool erase_prev, uint8_t *last_col, uint8_t *last_row)
+static bool logo_check_abort(void)
+{
+    hal_poll_events();
+    if (!hal_is_running() || hal_key_pressed()) {
+        g_intro_active = 0;
+        return true;
+    }
+    return false;
+}
+
+/* sub_4B54: 1ª pasada — dibujar sin borrar, deja rastro */
+static bool logo_pass_trail(uint16_t seq_addr)
 {
     uint16_t ptr = seq_addr;
-    uint8_t prev_col = *last_col;
-    uint8_t prev_row = *last_row;
-
     while (true) {
-        /* sub_4BA6: leer siguiente entrada */
+        uint8_t d = rom_rb(ptr);
+        if (d == SEQ_END) return true;
+        uint8_t e = rom_rb((uint16_t)(ptr + 1u));
+        ptr += 2u;
+        draw_logo_at(d, e);
+        hal_wait_vsync();
+        if (logo_check_abort()) return false;
+    }
+}
+
+/* sub_4B7F: pasada con limpieza. mode 0 = borra el sprite completo tras cada
+ * frame (C=0); mode 1 = limpia la fila row+4 (C=1, el logo sube). */
+static bool logo_pass_clean(uint16_t seq_addr, int mode)
+{
+    uint16_t ptr = seq_addr;
+    while (true) {
         uint8_t d = rom_rb(ptr);
         if (d == SEQ_END) {
-            /* Fin de secuencia: redibujar las 2 últimas posiciones */
+            /* sub_4B93: retroceder a la última entrada y dibujar permanente */
             ptr -= 2u;
-            d = rom_rb(ptr);
-            uint8_t e = rom_rb((uint16_t)(ptr + 1u));
-            draw_logo_at(d, e);
-            *last_col = d;
-            *last_row = e;
-            return true;  /* secuencia completada */
+            draw_logo_at(rom_rb(ptr), rom_rb((uint16_t)(ptr + 1u)));
+            return true;
         }
         uint8_t e = rom_rb((uint16_t)(ptr + 1u));
         ptr += 2u;
-
-        /* Borrar posición anterior */
-        if (erase_prev && (prev_col != d || prev_row != e)) {
-            logo_erase_at(prev_col, prev_row);
-        }
-
-        /* Dibujar en nueva posición */
         draw_logo_at(d, e);
-
-        prev_col = d;
-        prev_row = e;
-
-        /* Esperar 1 frame y comprobar input */
         hal_wait_vsync();
-        hal_poll_events();
-
-        if (!hal_is_running()) {
-            g_intro_active = 0;
-            *last_col = prev_col;
-            *last_row = prev_row;
-            return false;
-        }
-
-        if (hal_key_pressed()) {
-            g_intro_active = 0;
-            *last_col = prev_col;
-            *last_row = prev_row;
-            return false;  /* jugador interrumpió */
+        if (logo_check_abort()) return false;
+        if (mode == 0) {
+            logo_erase_at(d, e);                       /* sub_4BC4, C=0 */
+        } else {
+            /* sub_4BC4 C=1 → sub_4BD0: 14 celdas en blanco en fila e+4 */
+            for (uint8_t i = 0; i < 14u; i++)
+                vdp_put((uint8_t)(d + i), (uint8_t)(e + 4u), 0x00u);
         }
     }
 }
 
-/* ==========================================================================
- * sub_4B4C — Animación completa del logo (fase 1)
- *
- * Original:
- *   (0xEACA) = 0x02   → g_player_speed = 2 (lento)
- *   HL = 0x56D4       → secuencia 1 (espiral exterior)
- *   sub_4B54: animar con HL
- *     Si completado: HL = 0x56D4, C=0
- *       sub_4B7F(HL, C=0) → segunda pasada sin borrar
- *       Si Z: RET Z (logo completado)
- *     Si NZ (fire): g_intro_active=0; RET NZ
- *   Resultado: logo en posición final (col=0x09, row=0x0C)
- * ========================================================================== */
+/* sub_4B4C — animación completa del logo (fase 1) */
 static bool title_animate_logo(void)
 {
     g_player_speed = 0x02u;
-
-    uint8_t last_col = 0xFDu;  /* posición inicial (fuera de pantalla) */
-    uint8_t last_row = 0x00u;
-
-    /* Secuencia 1: espiral exterior */
-    if (!animate_logo_sequence(ROM_LOGO_SEQ1, false, &last_col, &last_row))
-        return false;  /* jugador interrumpió */
-
-    if (g_intro_active == 0) return false;
-
-    /* Segunda pasada de secuencia 1 (sin borrar — fija el logo) */
-    last_col = 0xFDu;
-    last_row = 0x00u;
-    if (!animate_logo_sequence(ROM_LOGO_SEQ1, false, &last_col, &last_row))
-        return false;
-
-    if (g_intro_active == 0) return false;
-
-    /* Secuencia 2: núcleo (col=0x09, filas 0x0C..0x06) */
-    if (!animate_logo_sequence(ROM_LOGO_SEQ2, false, &last_col, &last_row))
-        return false;
-
-    return g_intro_active != 0;
+    if (!logo_pass_trail(ROM_LOGO_SEQ1)) return false;     /* sub_4B54 */
+    if (!logo_pass_clean(ROM_LOGO_SEQ1, 0)) return false;  /* sub_4B7F C=0 */
+    g_player_speed = 0x20u;
+    if (!logo_pass_clean(ROM_LOGO_SEQ2, 1)) return false;  /* sub_4B7F C=1 */
+    return true;
 }
 
 /* ==========================================================================
@@ -505,6 +493,19 @@ static bool title_animate_credits(void)
  * ========================================================================== */
 static bool title_wait_for_input(void)
 {
+    /* Harness Fase 1: CASTLE_TITLEDUMP=path vuelca la VRAM emulada en el MISMO
+     * momento que el oráculo (bp de openMSX en sub_4AD7, tools/cap_title.tcl)
+     * y sale — permite comparar byte a byte port vs juego real. */
+    const char *td = getenv("CASTLE_TITLEDUMP");
+    if (td) {
+        static uint8_t v[0x4000];
+        hal_vdp_copy_from_vram(0x0000u, v, 0x4000u);
+        FILE *f = fopen(td, "wb");
+        if (f) { fwrite(v, 1, sizeof v, f); fclose(f); }
+        printf("CASTLE_TITLEDUMP -> %s\n", td);
+        exit(0);
+    }
+
     for (uint16_t i = 0; i < 0x80u; i++) {
         hal_wait_vsync();
         hal_poll_events();
@@ -529,11 +530,14 @@ static void intro_prepare_vram(void)
 
     curtain_wipe();
 
+    /* FILVRM(pattern+0x400, 0x1400, 0x00) + FILVRM(color+0x400, 0x1400, 0x11):
+     * limpia los tiles 0x80-0xFF del tercio 0 y TODOS los de los tercios 1-2.
+     * El tileset de juego 0x00-0x7F del tercio 0 persiste. */
+    hal_vdp_fill_vram(0x0400u, 0x00u, 0x1400u);
+    hal_vdp_fill_vram(0x2400u, 0x11u, 0x1400u);
+
     /* Z80 sub_4B07: sprites 8-13 en pixel (0,0) con patrón blank.
      * NO escribe al name table — no tiene equivalente en SDL. */
-    // for (uint8_t col = 8u; col < 14u; col++) {
-    //     vdp_put(col, 0u, 0x00u);
-    // }
 }
 
 /* ==========================================================================
@@ -620,12 +624,8 @@ void title_screen(void)
     /* sub_4AE2: preparar VRAM (NO toca rows 0-3, el HUD persiste) */
     intro_prepare_vram();
 
-    tiles_reload_all();
-
-    /* Cargar logo, font y dígitos de crédito desde ROM */
+    /* sub_4A55-4A81: logo a los 3 tercios + font/dígitos a tercios 1-2 */
     load_title_tiles();
-
-    tiles_dump_vram("title_init");
 
     /* Silencio durante la pantalla de título */
     music_stop();
@@ -663,11 +663,9 @@ void title_screen(void)
 
     /* Demo loop: corre game_frame() (con keyframes de AI desde 0x7ABE) */
     {
-        static int demo_dumped = 0;
         while (g_intro_active) {
             game_frame();
             tiles_animate(g_state_flags);
-            if (!demo_dumped) { tiles_dump_vram("demo"); demo_dumped = 1; }
             hal_wait_vsync();
 
             if (hal_key_pressed()) {

@@ -1,0 +1,3 @@
+script cargado, cwd=C:/Users/Soporte/Desktop/TheCastle_con_loader
+bp 0x4AD7 disparado
+vram_title.bin escrito

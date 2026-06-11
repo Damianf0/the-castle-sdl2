@@ -24,9 +24,11 @@
 #include "items_port.h"
 #include "doors_port.h"
 #include "blocks_port.h"
-#include "screen.h"
 
 int g_actors_on = 0;   /* el viewer lo activa para dibujar jugador+enemigos */
+
+/* Paleta TMS9918A empaquetada al formato de la textura (SDL_MapRGB en hal_init) */
+static uint32_t g_palette[16];
 
 #include <SDL2/SDL.h>
 #include <stdint.h>
@@ -347,64 +349,24 @@ void hal_vdp_write_reg(uint8_t reg, uint8_t val)
 {
     if (reg >= 8) return;
     vdp_reg[reg] = val;
-    if (reg == 7) screen_set_border(val & 0x0Fu);
     update_vdp_addresses();
 }
 
 /* ==========================================================================
  * VDP — ACCESO A VRAM
+ * Modelo fiel: una sola VRAM de 16 KB, igual que el TMS9918A. El render
+ * (vdp_render) interpreta pattern/color table POR TERCIO de pantalla, como
+ * el hardware real en SCREEN 2 — el juego depende de tiles distintos por
+ * tercio (verificado contra los dumps vram_XX.bin de openMSX).
  * ========================================================================== */
 
 void hal_vdp_write_vram(uint16_t addr, uint8_t val)
 {
-    /* Pattern table (0x0000-0x17FF) → g_bg_tiles, ignore third */
-    if (addr < 0x1800u) {
-        uint16_t off = addr % 0x0800u;
-        uint8_t  idx = (uint8_t)(off / 8u);
-        uint8_t  row = (uint8_t)(off % 8u);
-        g_bg_tiles[idx][row * 2u] = val;
-        return;
-    }
-    /* Name table (0x1800-0x1AFF) → g_screen_buf */
-    if (addr >= 0x1800u && addr < 0x1B00u) {
-        uint16_t off = addr - 0x1800u;
-        screen_put((uint8_t)(off % 32u), (uint8_t)(off / 32u), val);
-        return;
-    }
-    /* Color table (0x2000-0x37FF) → g_bg_tiles, ignore third */
-    if (addr >= 0x2000u && addr < 0x3800u) {
-        uint16_t off = (addr - 0x2000u) % 0x0800u;
-        uint8_t  idx = (uint8_t)(off / 8u);
-        uint8_t  row = (uint8_t)(off % 8u);
-        g_bg_tiles[idx][row * 2u + 1u] = val;
-        return;
-    }
-    /* Everything else (sprites, etc.) → vram */
     vram[addr & (VRAM_SIZE - 1u)] = val;
 }
 
 uint8_t hal_vdp_read_vram(uint16_t addr)
 {
-    /* Pattern table → g_bg_tiles */
-    if (addr < 0x1800u) {
-        uint16_t off = addr % 0x0800u;
-        uint8_t  idx = (uint8_t)(off / 8u);
-        uint8_t  row = (uint8_t)(off % 8u);
-        return g_bg_tiles[idx][row * 2u];
-    }
-    /* Name table → g_screen_buf */
-    if (addr >= 0x1800u && addr < 0x1B00u) {
-        uint16_t off = addr - 0x1800u;
-        return g_screen_buf[off / 32u][off % 32u];
-    }
-    /* Color table → g_bg_tiles */
-    if (addr >= 0x2000u && addr < 0x3800u) {
-        uint16_t off = (addr - 0x2000u) % 0x0800u;
-        uint8_t  idx = (uint8_t)(off / 8u);
-        uint8_t  row = (uint8_t)(off % 8u);
-        return g_bg_tiles[idx][row * 2u + 1u];
-        return 0;
-    }
     return vram[addr & (VRAM_SIZE - 1u)];
 }
 
@@ -467,31 +429,45 @@ void hal_vdp_clear_sprites(void)
 /* ==========================================================================
  * VDP — RENDERIZADO
  *
- * Ya no se usa VRAM para pattern/color table. El renderizado lee:
- *   - g_screen_buf[32×24] para los índices de tiles
- *   - g_bg_tiles[256][16] para los datos de cada tile (formato intercalado)
- *   - vram[] solo para sprites (attr + pattern)
+ * SCREEN 2 (Graphics II) fiel, leyendo SOLO la VRAM emulada:
+ *   - name table: 32×24 índices de tile (vdp_name_base)
+ *   - pattern/color table: 3 bloques de 0x800 — el tercio de pantalla
+ *     (filas 0-7 / 8-15 / 16-23) selecciona el bloque. Mismo índice de tile
+ *     puede tener gráficos distintos en cada tercio (el juego lo explota).
+ *   - color 0 = transparente → se ve el backdrop (reg 7 bits 0-3)
  * ========================================================================== */
 
 static void vdp_render(void)
 {
-    /* Format: 0xAABBGGRR for SDL_RGBA8888 on LE */
-    uint32_t border_rgba = g_palette[0];
-    if ((vdp_reg[7] & 0x0Fu)) {
-        border_rgba = g_palette[vdp_reg[7] & 0x0Fu];
-    }
+    uint8_t  backdrop      = (uint8_t)(vdp_reg[7] & 0x0Fu);
+    uint32_t backdrop_rgba = g_palette[backdrop];
 
-    /* Screen off: just border */
+    /* Screen off (bit 6 de R1): solo backdrop */
     if (!(vdp_reg[1] & 0x40u)) {
         for (int i = 0; i < MSX_W * MSX_H; i++)
-            framebuf[i] = border_rgba;
+            framebuf[i] = backdrop_rgba;
         return;
     }
 
-    /* Render background from flat tile arrays */
-    screen_render(framebuf, MSX_W, MSX_H);
+    for (int row = 0; row < 24; row++) {
+        uint16_t third_off = (uint16_t)((row >> 3) * 0x800);
+        for (int col = 0; col < 32; col++) {
+            uint8_t tile = vram[(uint16_t)(vdp_name_base + row * 32 + col)];
+            const uint8_t *pat = &vram[(uint16_t)(vdp_pat_base   + third_off + tile * 8u)];
+            const uint8_t *clr = &vram[(uint16_t)(vdp_color_base + third_off + tile * 8u)];
+            for (int yy = 0; yy < 8; yy++) {
+                uint8_t p  = pat[yy];
+                uint8_t fg = (uint8_t)(clr[yy] >> 4);
+                uint8_t bg = (uint8_t)(clr[yy] & 0x0Fu);
+                uint32_t fgc = fg ? g_palette[fg] : backdrop_rgba;
+                uint32_t bgc = bg ? g_palette[bg] : backdrop_rgba;
+                uint32_t *dst = &framebuf[(row * 8 + yy) * MSX_W + col * 8];
+                for (int xx = 0; xx < 8; xx++)
+                    dst[xx] = (p & (0x80u >> xx)) ? fgc : bgc;
+            }
+        }
+    }
 
-    /* Render sprites on top (still reads from vram[]) */
     vdp_render_sprites();
 }
 
@@ -1048,8 +1024,14 @@ bool hal_key_pressed(void)
  */
 void hal_wait_vsync(void)
 {
+    /* CASTLE_FAST=1: sin límite de frame rate (para harness/capturas) */
+    static int fast = -1;
+    if (fast < 0) fast = getenv("CASTLE_FAST") ? 1 : 0;
+
     music_isr_tick();   /* VBlank ISR: advance music player */
     hal_vdp_present();
+
+    if (fast) { frame_start_ticks = SDL_GetTicks64(); return; }
 
     uint64_t now     = SDL_GetTicks64();
     uint64_t elapsed = now - frame_start_ticks;

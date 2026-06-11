@@ -25,7 +25,6 @@ set(GAME_SOURCES
     camera.c        # Cámara, scroll, triggers de sala, render de mapa (sub_623C)
     title.c         # Pantalla de título completa con animación (sub_4A4A)
     tiledata.c      # Arrays de tiles cargados desde ROM
-    screen.c        # Screen buffer + renderer desde arrays planos
     geom.c          # Decoder de geometría de sala portado del disasm (sub_6616+)
     actors.c        # Motor maqueta: jugador/física (a reemplazar en Fase 3)
     player_sprite.c # Sprite real del jugador (ROM 0x9B96)

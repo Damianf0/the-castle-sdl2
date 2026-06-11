@@ -37,7 +37,6 @@
 #include "doors_port.h"
 #include "blocks_port.h"
 #include "tiledata.h"
-#include "screen.h"
 #include "colmap_data.h"
 #include "doors_data.h"
 #include "keys_data.h"
@@ -242,8 +241,8 @@ void game_frame(void)
     /* check_door_exit (sub_4499) */
     check_door_exit();
 
-    /* update HUD (sub_5A2D) */
-    draw_hud();
+    /* update HUD (sub_5A2D — solo la parte dinámica) */
+    draw_hud_dynamic();
 
     /* check game over */
     if (g_game_over) return;
@@ -431,13 +430,35 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /* --- 3. Cargar overlay tiles desde ROM --- */
-  //tiledata_load_from_rom(rom_buf, rom_size);
+    /* --- Modo render de fixture: CASTLE_VRAMIN=dump.bin + CASTLE_SHOT=out.bmp
+     * carga un volcado de VRAM de 16KB (oráculo openMSX) en la VRAM emulada,
+     * renderiza UN frame con el VDP fiel y guarda el BMP. Los sprites del dump
+     * se desactivan (la referencia compara solo el fondo SCREEN 2). */
+    {
+        const char *vin = getenv("CASTLE_VRAMIN");
+        const char *shot = getenv("CASTLE_SHOT");
+        if (vin && shot) {
+            FILE *f = fopen(vin, "rb");
+            uint8_t vbuf[0x4000];
+            if (!f || fread(vbuf, 1, sizeof vbuf, f) != sizeof vbuf) {
+                fprintf(stderr, "CASTLE_VRAMIN: no puedo leer 16KB de %s\n", vin);
+                if (f) fclose(f);
+                hal_quit(); free(rom_buf);
+                return 1;
+            }
+            fclose(f);
+            hal_vdp_init_screen2();
+            hal_vdp_copy_to_vram(0x0000u, vbuf, 0x4000u);
+            hal_vdp_clear_sprites();
+            hal_vdp_present();
+            hal_screenshot(shot);
+            printf("CASTLE_VRAMIN: %s -> %s\n", vin, shot);
+            hal_quit(); free(rom_buf);
+            return 0;
+        }
+    }
 
-    /* --- 4. Inicializar screen buffer --- */
-    screen_init();
-
-    /* --- 5. Cargar tiles ROM → VRAM (escribe g_bg_tiles via HAL) --- */
+    /* --- 3. Cargar tiles ROM → VRAM emulada --- */
     tiles_load_from_rom(rom_buf, rom_size);
 
     /* --- 6. Inicializar subsistemas --- */

@@ -14,9 +14,10 @@ int     g_pkey_n;
 int     g_key_inv[KEY_COLORS];
 uint8_t g_key_color[KEY_COLORS];
 
-/* Color MSX real de cada color lógico de llave (val-0x2A), extraído de la VRAM:
- * 0=azul 1=(sin uso) 2=magenta 3=verde 4=cyan 5=amarillo. */
-const uint8_t KEY_COLMSX[KEY_COLORS] = { 4, 6, 13, 2, 7, 10 };
+/* Color MSX real de cada color lógico de llave (val-0x2A) — tabla ROM 0x6DC9
+ * (sub_4EA2): {0x41,0x81,0xD1,0x21,0x71,0xA1} → ink 4,8,13,2,7,10.
+ * 0=azul 1=rojo 2=magenta 3=verde 4=cyan 5=amarillo. */
+const uint8_t KEY_COLMSX[KEY_COLORS] = { 4, 8, 13, 2, 7, 10 };
 
 /* Bitmap 16x16 de la llave (forma real extraída del name table del ROM):
  * anillo en la cabeza + caña + dientes. Bit 15 = columna 0. */
