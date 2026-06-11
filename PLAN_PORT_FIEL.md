@@ -75,7 +75,27 @@
   fixtures capturados, byte-exacto. Entonces se BORRAN `map_real.c`,
   `colmap_data.c`, `keys/doors/items/blocks_data.c` del runtime.
 
-### Fase 3 — Game loop + jugador (`sub_4064`, `sub_40BB`, `sub_5053`)
+### Fase 3 — Game loop + jugador (`sub_4064`, `sub_40BB`, `sub_5053`) — EN CURSO
+
+Avance 2026-06-11:
+- ✅ Trazas-oráculo capturadas (`tests/fixtures/traces/`, 6 guiones de input
+  por frame). Física confirmada: 4 px/frame; salto = 8×4px de subida + flote;
+  fase en `0xEAD6` (0=suelo, 1..8 sube, 9+ flota, 0x11=¿caída?); stick en
+  `0xEACB` (GTSTCK), trigger en `0xEACC` con POLL ALTERNADO frame por medio.
+- Mapeo parcial de `sub_40BB` (0x40BB-0x41DE): construye un registro H de
+  flags por frame (bits set/reset según probes de colisión `sub_4515` /
+  `sub_44EF` / `sub_4A05` sobre coordenadas 0xE334/0xE335 ±offsets), maneja
+  empuje de bloques (`sub_4273`, ¡trampolín auto-modificante en 0xEAFA que
+  salta a INC B×2 / DEC B según dirección!) y apertura de puertas
+  (`sub_42FF` → `sub_4325`/`sub_758C`). `sub_47F5` = detector de pendiente
+  (suma ±1 por celda bajo los pies vía `sub_4A38`). La actualización de
+  POSICIÓN no está en 40BB: buscar en `sub_45AD` (movimiento, llamada desde
+  4872/487A) y el render del sprite (sub_6F4D/6EE1 desde 0x62D8/623C).
+- Pendiente: mapear `sub_4515`/`sub_44EF`/`sub_4A05`/`sub_4A38` (probes),
+  `sub_45AD` (mover), `sub_5128` (vsync+input con el poll alternado),
+  `sub_5053` (transición de sala), `sub_4499` (salida por puerta); luego
+  portar a `player.c` sobre el espejo RAM del room_loader y comparar las
+  trazas frame a frame (harness: mismo guion → misma posición/fase).
 - Portar el frame loop real (el esqueleto `game_frame()` ya mapea el orden de
   llamadas) y el movimiento/física del jugador del disasm. Transición de sala
   real (`sub_5053`), no la heurística de bordes de `faithful_play()`.
