@@ -7,6 +7,8 @@ Entrypoint: `main.c:main()`. All game variables defined in `main.c`, declared `e
 
 ## Build & Run
 
+Windows (this machine, canonical): `powershell -ExecutionPolicy Bypass -File .\build.ps1` → `the_castle.exe` (MinGW + SDL2 under `..\_buildtools\`). CMake is NOT installed here; `CMakeLists.txt` mirrors the same source list for other platforms:
+
 ```
 cmake -B build [-DPAL_TIMING=ON] [-DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON]
 cmake --build build
@@ -14,6 +16,22 @@ build/the_castle [path/to/the_castle.rom]
 ```
 
 Defaults: RelWithDebInfo build type. ROM is copied to `build/the_castle.rom` by CMake if present.
+
+## Tests (harness del oráculo) — correr SIEMPRE antes de commitear
+
+```
+python tests/run_tests.py            # compila + 5 suites
+python tests/run_tests.py --no-build
+```
+
+- `tests/fixtures/` = dumps byte-exactos de openMSX (ver su README). Son la
+  verdad de referencia; NUNCA fuente de datos del runtime.
+- `CASTLE_DUMP=dir the_castle.exe` vuelca colmap/doors/keys/items por sala en
+  formato canónico (sin SDL); el runner lo compara contra los fixtures.
+- `tools/` = scripts de captura (.tcl para openMSX) y generadores `gen_*.py`
+  (corren desde la raíz del repo).
+- Rumbo del proyecto: `PLAN_PORT_FIEL.md` (port fiel desde el disasm, los
+  fixtures pasan de datos a tests).
 
 ## Architecture
 

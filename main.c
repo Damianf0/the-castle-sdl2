@@ -38,6 +38,10 @@
 #include "blocks_port.h"
 #include "tiledata.h"
 #include "screen.h"
+#include "colmap_data.h"
+#include "doors_data.h"
+#include "keys_data.h"
+#include "items_data.h"
 
 /* ==========================================================================
  * CONSTANTES
@@ -356,6 +360,64 @@ int main(int argc, char *argv[])
 
     rom_buf = load_rom(rom_path, &rom_size);
     if (!rom_buf) return 1;
+
+    /* --- Modo dump de estado (harness de tests, sin SDL): vuelca por sala las
+     * tablas que el juego usa, en formato canónico, y sale.
+     *   CASTLE_DUMP=dir → dir/colmap_XX.bin (600 bytes crudos del campo 20x30)
+     *                   + dir/doors_XX.txt  (dcol drow dw dh color count)
+     *                   + dir/keys_XX.txt   (scol srow sw sh color)
+     *                   + dir/items_XX.txt  (scol srow val)
+     * Hoy sale de las tablas horneadas de los fixtures (verde trivial). Cuando
+     * el room loader portado (sub_64DD) las reemplace, este dump debe seguir
+     * byte-idéntico — esa es la red de regresión del port. */
+    {
+        const char *dd = getenv("CASTLE_DUMP");
+        if (dd) {
+            char p[512];
+            for (int idx = 0; idx < 100; idx++) {
+                int xx = ((idx / 10) << 4) | (idx % 10);   /* sala BCD */
+                FILE *f;
+                snprintf(p, sizeof p, "%s/colmap_%02X.bin", dd, xx);
+                f = fopen(p, "wb");
+                if (!f) {
+                    fprintf(stderr, "CASTLE_DUMP: no puedo escribir %s\n", p);
+                    free(rom_buf);
+                    return 1;
+                }
+                fwrite(COLMAP[idx], 1, CM_ROWS * CM_COLS, f);
+                fclose(f);
+
+                snprintf(p, sizeof p, "%s/doors_%02X.txt", dd, xx);
+                f = fopen(p, "w");
+                for (int i = 0; f && i < DOOR_COUNT[idx]; i++) {
+                    const DoorDef *d = &DOOR_DATA[idx][i];
+                    fprintf(f, "%u %u %u %u %u %u\n",
+                            d->dcol, d->drow, d->dw, d->dh, d->color, d->count);
+                }
+                if (f) fclose(f);
+
+                snprintf(p, sizeof p, "%s/keys_%02X.txt", dd, xx);
+                f = fopen(p, "w");
+                for (int i = 0; f && i < KEY_COUNT[idx]; i++) {
+                    const KeySpawn *k = &KEY_DATA[idx][i];
+                    fprintf(f, "%u %u %u %u %u\n",
+                            k->scol, k->srow, k->sw, k->sh, k->color);
+                }
+                if (f) fclose(f);
+
+                snprintf(p, sizeof p, "%s/items_%02X.txt", dd, xx);
+                f = fopen(p, "w");
+                for (int i = 0; f && i < ITEM_COUNT[idx]; i++) {
+                    const ItemSpawn *it = &ITEM_DATA[idx][i];
+                    fprintf(f, "%u %u 0x%02X\n", it->scol, it->srow, it->val);
+                }
+                if (f) fclose(f);
+            }
+            printf("CASTLE_DUMP: 100 salas -> %s\n", dd);
+            free(rom_buf);
+            return 0;
+        }
+    }
 
     /* --- 2. Inicializar HAL SDL2 --- */
 #ifdef CASTLE_PAL_TIMING

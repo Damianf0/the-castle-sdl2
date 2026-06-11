@@ -16,7 +16,6 @@ option(ENABLE_ASAN "Activar AddressSanitizer (solo desarrollo)" OFF)
 set(GAME_SOURCES
     main.c          # Punto de entrada: carga ROM, inicializa HAL y subsistemas
     the_castle.c    # Loop principal, jugador, movimiento, puntuación
-#   vram_tiles.c    # Datos de tiles extraídos de Physical VRAM dump (openMSX)
     tiles.c         # Carga de tiles ROM → VRAM (sub_4D52 / sub_64AB / sub_6CD9)
     enemies.c       # IA de enemigos: roller, bat, sprite draw (sub_6F5C..sub_719D)
     particles.c     # Chispas, partículas, trampa murciélago (sub_61F5 / sub_7279)
@@ -27,6 +26,24 @@ set(GAME_SOURCES
     title.c         # Pantalla de título completa con animación (sub_4A4A)
     tiledata.c      # Arrays de tiles cargados desde ROM
     screen.c        # Screen buffer + renderer desde arrays planos
+    geom.c          # Decoder de geometría de sala portado del disasm (sub_6616+)
+    actors.c        # Motor maqueta: jugador/física (a reemplazar en Fase 3)
+    player_sprite.c # Sprite real del jugador (ROM 0x9B96)
+    # --- Tablas generadas desde tests/fixtures/ (a reemplazar por el decoder
+    #     portado de sub_64DD en Fase 2 — ver PLAN_PORT_FIEL.md) ---
+    map_real.c      # Name tables + tiles reales de las 100 salas (gen_realtiles.py)
+    colmap_data.c   # Tilemap de colisión 0xE496 (gen_colmap_data.py)
+    doors_data.c    # Puertas 0xE346 (gen_doors_data.py)
+    keys_data.c     # Llaves 0xE3D6 (gen_keys_data.py)
+    items_data.c    # Items 0xE3D6 (gen_items_data.py)
+    blocks_data.c   # Bloques empujables
+    enemies_paths.c # Trayectorias grabadas de enemigos (a reemplazar en Fase 4)
+    # --- Capa "port" del motor maqueta (a reemplazar en Fases 3-5) ---
+    doors_port.c
+    keys_port.c
+    items_port.c
+    blocks_port.c
+    enemies_port.c
 )
 
 # =============================================================================
@@ -89,8 +106,10 @@ else()
     target_compile_options(the_castle PRIVATE ${SDL2_CFLAGS_OTHER})
 endif()
 
-# math (necesario para síntesis PSG)
-target_link_libraries(the_castle PRIVATE m)
+# math (necesario para síntesis PSG; MSVC no tiene libm separada)
+if(NOT MSVC)
+    target_link_libraries(the_castle PRIVATE m)
+endif()
 
 # =============================================================================
 # Definiciones de compile
