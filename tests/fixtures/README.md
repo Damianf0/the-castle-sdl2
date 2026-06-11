@@ -33,5 +33,16 @@ byte-idéntico `colmap_data.c`, `doors_data.c`, `keys_data.c`, `items_data.c` y
 `map_real.c` desde estos fixtures (mientras esas tablas sigan existiendo; el
 plan es reemplazarlas por decoders portados — ver `PLAN_PORT_FIEL.md`).
 
-Trazas de comportamiento (para Fases 3-4): se generan con `tools/trace_*.tcl`
-y `tools/dump_*.tcl` (salto, caminata, enemigos frame a frame).
+## Trazas del jugador (Fase 3) — `traces/`
+
+Capturadas con `tools/capture_traces.ps1` → `tools/trace_player.tcl`: el juego
+real con un guion de input POR FRAME (`moves_*.txt`, alfabeto R/L/U/D/A/W/S/.)
+y el estado del jugador por frame en `trace_*.txt`:
+`fc spriteY spriteX pattern EAD6 EACB EACC E334 E335`
+(sprite 8 = posición en píxeles; 0xEAD6 = fase de salto/anim; 0xEACB = stick;
+0xEACC = trigger — ojo: el juego alterna el poll frame por medio; 0xE334/5 =
+col/fila lógicas). Sets: idle, walk, jumptap, jumphold, runjump, wall.
+El jugador portado (Fase 3) debe reproducirlas frame a frame con el mismo
+guion. Física confirmada: 4 px/frame, salto 8×4px de subida + flote.
+
+Trazas viejas de diagnóstico: `tools/trace_*.tcl` y `tools/dump_*.tcl`.
