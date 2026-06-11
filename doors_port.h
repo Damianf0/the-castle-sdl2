@@ -2,7 +2,7 @@
 #define DOORS_PORT_H
 #include <stdint.h>
 
-/* Puertas con requisito de llaves (detectadas del mapa real, doors_data.c).
+/* Puertas con requisito de llaves (tabla 0xE346 del ROOM LOADER).
  * Mientras está cerrada bloquea (sólida); se abre al tocarla con las llaves
  * del color y cantidad requeridos (que se descuentan). */
 #define ROOMDOOR_MAX 6

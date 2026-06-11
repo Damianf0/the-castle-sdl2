@@ -29,14 +29,6 @@ set(GAME_SOURCES
     room_loader.c   # ROOM LOADER fiel (sub_64DD): salas desde el ROM, 700/700 fixtures
     actors.c        # Motor maqueta: jugador/física (a reemplazar en Fase 3)
     player_sprite.c # Sprite real del jugador (ROM 0x9B96)
-    # --- Tablas generadas desde tests/fixtures/ (a reemplazar por el decoder
-    #     portado de sub_64DD en Fase 2 — ver PLAN_PORT_FIEL.md) ---
-    map_real.c      # Name tables + tiles reales de las 100 salas (gen_realtiles.py)
-    colmap_data.c   # Tilemap de colisión 0xE496 (gen_colmap_data.py)
-    doors_data.c    # Puertas 0xE346 (gen_doors_data.py)
-    keys_data.c     # Llaves 0xE3D6 (gen_keys_data.py)
-    items_data.c    # Items 0xE3D6 (gen_items_data.py)
-    blocks_data.c   # Bloques empujables
     enemies_paths.c # Trayectorias grabadas de enemigos (a reemplazar en Fase 4)
     # --- Capa "port" del motor maqueta (a reemplazar en Fases 3-5) ---
     doors_port.c

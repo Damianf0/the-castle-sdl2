@@ -16,7 +16,6 @@
 #include "hal.h"
 #include "game.h"
 #include "geom.h"
-#include "map_real.h"
 #include "actors.h"
 #include "player_sprite.h"
 #include "enemies_port.h"
@@ -553,130 +552,50 @@ static void vdp_render_sprites(void)
  * ========================================================================== */
 
 /* ==========================================================================
- * DEBUG — overlay de geometría (dibuja g_map[] directo al framebuffer)
- * Activado con la variable de entorno CASTLE_GEOMDBG=1. Sirve para ver el
- * decoder de geometría (geom.c) sin depender del pipeline de tiles/glifos.
+ * Overlay de ACTORES dinámicos sobre el render del VDP.
+ * El fondo (sala, llaves, puertas, ítems) ya lo dibujó vdp_render desde la
+ * VRAM real poblada por room_loader; acá van solo el jugador, los enemigos
+ * en movimiento, los bloques en su posición actual y el inventario del HUD.
+ * (Capa maqueta: desaparece cuando Fases 3-5 porten el game loop real.)
  * ========================================================================== */
+
+/* blitea una celda de 16 bytes intercalados (patrón,color) al framebuffer */
+static void blit_cell16(int bx, int by, const uint8_t *t16, int mirror, int transp)
+{
+    for (int yy = 0; yy < 8; yy++) {
+        uint8_t pat = t16[yy * 2], col = t16[yy * 2 + 1];
+        uint8_t fg = (uint8_t)(col >> 4), bg = (uint8_t)(col & 0x0Fu);
+        int y = by + yy;
+        if (y < 0 || y >= MSX_H) continue;
+        for (int xx = 0; xx < 8; xx++) {
+            int x = bx + (mirror ? (7 - xx) : xx);
+            uint8_t pi = (pat & (0x80u >> xx)) ? fg : bg;
+            if (x < 0 || x >= MSX_W) continue;
+            if (transp && pi <= 1u) continue;   /* 0/1 = transparente */
+            framebuf[y * MSX_W + x] = g_palette[pi];
+        }
+    }
+}
+
 static void debug_draw_geom(void)
 {
-    /* Render con la VRAM REAL del ROM (map_real.c): name table 32x24, cada tile
-     * = 8 bytes patrón + 8 bytes color (SCREEN 2). Byte-idéntico al juego. */
-    int ry = g_geom_room >> 4, rx = g_geom_room & 0x0F;
-    if (rx > 9 || ry > 9) return;
-    int idx = ry * 10 + rx;
+    if (!g_actors_on) return;
 
-    /* Copia mutable de la name table; blanqueamos los enemigos HORNEADOS en su
-     * bounding-box de spawn (los dinámicos se dibujan aparte en draw_enemies). */
-    static unsigned short nt[RT_ROWS][RT_COLS];
-    for (int r = 0; r < RT_ROWS; r++)
-        for (int c = 0; c < RT_COLS; c++) nt[r][c] = ROOM_NT[idx][r][c];
-    if (g_actors_on) {
-        for (int i = 0; i < g_pen_n; i++) {
-            PortEnemy *p = &g_pen[i];
-            for (int dr = 0; dr < 2; dr++)
-                for (int dc = 0; dc < p->gw; dc++) {
-                    int rr = p->sc + 4 + dr, cc = p->sr + p->gox + dc;
-                    if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
-                        nt[rr][cc] = (unsigned short)g_room_air;
-                }
-        }
-        /* llaves: blanquear SIEMPRE el horneado (el name table es inconsistente
-         * entre salas); las activas se redibujan sintéticas más abajo */
-        for (int i = 0; i < g_pkey_n; i++) {
-            for (int dr = 0; dr < g_pkey[i].sh; dr++)
-                for (int dc = 0; dc < g_pkey[i].sw; dc++) {
-                    int rr = g_pkey[i].srow + dr, cc = g_pkey[i].scol + dc;
-                    if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
-                        nt[rr][cc] = (unsigned short)g_room_air;
-                }
-        }
-        /* ítems YA recogidos: blanquear su gráfico horneado (desaparecen) */
-        for (int i = 0; i < g_pitem_n; i++) {
-            if (g_pitem[i].active) continue;   /* presente -> se ve horneado */
-            for (int dr = 0; dr < 2; dr++)
-                for (int dc = 0; dc < 2; dc++) {
-                    int rr = g_pitem[i].srow + dr, cc = g_pitem[i].scol + dc;
-                    if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
-                        nt[rr][cc] = (unsigned short)g_room_air;
-                }
-        }
-        /* puertas ABIERTAS: blanquear su gráfico (quedan transitables) */
-        for (int i = 0; i < g_door_n; i++) {
-            if (!g_door[i].open) continue;
-            for (int dr = 0; dr < g_door[i].dh; dr++)
-                for (int dc = 0; dc < g_door[i].dw; dc++) {
-                    int rr = g_door[i].drow + dr, cc = g_door[i].dcol + dc;
-                    if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
-                        nt[rr][cc] = (unsigned short)g_room_air;
-                }
-        }
-        /* bloques empujables: blanquear el horneado del spawn (se redibujan en
-         * su posición actual en draw_enemies/abajo) */
-        for (int i = 0; i < g_block_n; i++) {
-            if (!g_block[i].active) continue;
-            for (int dr = 0; dr < 2; dr++)
-                for (int dc = 0; dc < 2; dc++) {
-                    int rr = g_block[i].sr0 + dr, cc = g_block[i].sc0 + dc;
-                    if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
-                        nt[rr][cc] = (unsigned short)g_room_air;
-                }
-        }
+    /* bloques empujables: gráfico 2x2 (capturado de la VRAM) en su posición actual */
+    for (int i = 0; i < g_block_n; i++) {
+        if (!g_block[i].active) continue;
+        for (int dr = 0; dr < 2; dr++)
+            for (int dc = 0; dc < 2; dc++)
+                blit_cell16((g_block[i].scol + dc) * 8, (g_block[i].srow + dr) * 8,
+                            g_block[i].gfx[dr * 2 + dc], 0, 0);
     }
 
-    for (int r = 0; r < RT_ROWS; r++) {
-        for (int c = 0; c < RT_COLS; c++) {
-            const unsigned char *t = RT_TILES[nt[r][c]];
-            for (int yy = 0; yy < 8; yy++) {
-                int y = r * 8 + yy; if (y < 0 || y >= MSX_H) continue;
-                uint8_t pat = t[yy], col = t[8 + yy];
-                uint8_t fg = col >> 4, bg = col & 0x0Fu;
-                for (int xx = 0; xx < 8; xx++) {
-                    int x = c * 8 + xx; if (x < 0 || x >= MSX_W) continue;
-                    uint8_t pi = (pat & (0x80u >> xx)) ? fg : bg;
-                    framebuf[y * MSX_W + x] = g_palette[pi];
-                }
-            }
-        }
-    }
-
-    if (g_actors_on) {
-        /* llaves activas: dibujar la llave 16x16 (forma real del ROM) en su
-         * color lógico. Posición = (scol,srow)*8, igual que la colisión. */
-        for (int i = 0; i < g_pkey_n; i++) {
-            if (!g_pkey[i].active) continue;
-            uint8_t mc = KEY_COLMSX[g_pkey[i].color < KEY_COLORS ? g_pkey[i].color : 0];
-            uint32_t kc = g_palette[mc];
-            int kx = g_pkey[i].scol * 8, ky = g_pkey[i].srow * 8;
-            for (int yy = 0; yy < 16; yy++) {
-                int y = ky + yy; if (y < 0 || y >= MSX_H) continue;
-                uint16_t bits = KEY_BMP[yy];
-                for (int b = 0; b < 16; b++) {
-                    if (!(bits & (0x8000u >> b))) continue;
-                    int x = kx + b; if (x < 0 || x >= MSX_W) continue;
-                    framebuf[y * MSX_W + x] = kc;
-                }
-            }
-        }
-        /* bloques empujables: dibujar su gráfico 2x2 en la posición actual */
-        for (int i = 0; i < g_block_n; i++) {
-            if (!g_block[i].active) continue;
-            for (int dr = 0; dr < 2; dr++)
-                for (int dc = 0; dc < 2; dc++) {
-                    const unsigned char *t = RT_TILES[g_block[i].gfx[dr * 2 + dc]];
-                    int bx = (g_block[i].scol + dc) * 8, by = (g_block[i].srow + dr) * 8;
-                    for (int yy = 0; yy < 8; yy++) {
-                        int y = by + yy; if (y < 0 || y >= MSX_H) continue;
-                        uint8_t pat = t[yy], col = t[8 + yy];
-                        uint8_t fg = col >> 4, bg = col & 0x0F;
-                        for (int xx = 0; xx < 8; xx++) {
-                            int x = bx + xx; if (x < 0 || x >= MSX_W) continue;
-                            framebuf[y * MSX_W + x] = g_palette[(pat & (0x80u >> xx)) ? fg : bg];
-                        }
-                    }
-                }
-        }
+    {
         void draw_actors(int,int); draw_actors(0, 0);
-        /* HUD: inventario de llaves recogidas (un ícono de LLAVE por llave, por color) */
+    }
+
+    /* HUD: inventario de llaves recogidas (un ícono por llave, por color) */
+    {
         static const uint8_t KEYICON[10] = {
             0x3C,0x42,0x42,0x3C,0x18,0x18,0x18,0x1E,0x1A,0x1E };
         int hx = 56, hy = 16;
@@ -754,7 +673,7 @@ void draw_actors(int OX, int OY)
 }
 
 /* Enemigos faithful: MOVIMIENTO = replay exacto del ROM (enemies_port.c) y
- * GRÁFICO = los tiles REALES del enemigo extraídos de la VRAM (3x2), dibujados
+ * GRÁFICO = las celdas reales capturadas de la VRAM en el spawn, dibujadas
  * en la posición actual con el fondo transparente. Mapeo (validado vs name
  * table real): screen_col = byte2 (p->row), screen_row = byte3+4 (p->col). */
 void draw_enemies(int OX, int OY)
@@ -763,28 +682,16 @@ void draw_enemies(int OX, int OY)
     for (int i = 0; i < g_pen_n; i++) {
         PortEnemy *p = &g_pen[i];
         if (!p->active) continue;
-        /* Gráfico real (frame único) extraído de map_real en el spawn, 2x2.
-         * Se ESPEJA horizontalmente cuando el enemigo va en dirección contraria
+        /* Se ESPEJA horizontalmente cuando el enemigo va en dirección contraria
          * a la que mira de fábrica (facing izq/der). */
         int mirror = (p->face0 != 0 && p->face != 0 && p->face != p->face0);
         for (int dr = 0; dr < 2; dr++) {
             for (int dc = 0; dc < p->gw; dc++) {
-                const unsigned char *t = RT_TILES[p->gfx[dr * 4 + dc]];
                 /* al espejar, la columna de tile dc va al lado opuesto */
                 int scol = mirror ? (p->gw - 1 - dc) : dc;
-                int bx = OX + (p->row + p->gox + scol) * 8;
-                int by = OY + (p->col + 4 + dr) * 8;
-                for (int yy = 0; yy < 8; yy++) {
-                    int y = by + yy; if (y < 0 || y >= MSX_H) continue;
-                    uint8_t pat = t[yy], col = t[8 + yy];
-                    uint8_t fg = col >> 4, bg = col & 0x0F;
-                    for (int xx = 0; xx < 8; xx++) {
-                        int x = bx + (mirror ? (7 - xx) : xx);
-                        if (x < 0 || x >= MSX_W) continue;
-                        uint8_t pi = (pat & (0x80u >> xx)) ? fg : bg;
-                        if (pi > 1) framebuf[y * MSX_W + x] = g_palette[pi]; /* 0/1=transparente */
-                    }
-                }
+                blit_cell16(OX + (p->row + p->gox + scol) * 8,
+                            OY + (p->col + 4 + dr) * 8,
+                            p->gfx[dr * 4 + dc], mirror, 1);
             }
         }
     }

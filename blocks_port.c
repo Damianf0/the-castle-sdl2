@@ -1,11 +1,12 @@
 /*
- * THE CASTLE — Bloques empujables (tabla COLL: ollas/ladrillos).
+ * THE CASTLE — Bloques empujables (tabla COLL 0xE386 del ROOM LOADER:
+ * ollas/ladrillos, códigos 0x30-0x35; el 0x34 son trampas, no bloques).
  * Sólidos; el jugador los empuja en horizontal si hay lugar atrás; caen por
- * gravedad si quedan sin apoyo. Gráfico real 2x2 de la VRAM.
+ * gravedad si quedan sin apoyo. Gráfico real 2x2 capturado de la VRAM al
+ * cargar la sala; el horneado del spawn se blanquea (se dibujan dinámicos).
  */
 #include "blocks_port.h"
-#include "blocks_data.h"
-#include "map_real.h"
+#include "room_loader.h"
 #include "actors.h"
 
 Block g_block[BLOCK_MAX];
@@ -19,20 +20,24 @@ void blocks_room_init(unsigned char room)
     int ry = room >> 4, rx = room & 0x0F;
     g_block_n = 0;
     if (rx > 9 || ry > 9) return;
-    int idx = ry * 10 + rx;
-    int n = BLOCK_COUNT[idx];
-    for (int i = 0; i < n && g_block_n < BLOCK_MAX; i++) {
-        const BlockSpawn *s = &BLOCK_DATA[idx][i];
-        Block *b = &g_block[g_block_n++];
-        b->active = 1;
-        b->scol = b->sc0 = s->scol;
-        b->srow = b->sr0 = s->srow;
-        for (int dr = 0; dr < BH; dr++)
-            for (int dc = 0; dc < BW; dc++) {
-                int rr = s->srow + dr, cc = s->scol + dc;
-                b->gfx[dr * BW + dc] = (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
-                                     ? ROOM_NT[idx][rr][cc] : 0;
-            }
+    /* tabla COLL 0xE386: 8 slots × [activo, código, col, fila, 0] */
+    for (int s = 0; s < 8 && g_block_n < BLOCK_MAX; s++) {
+        uint16_t e = (uint16_t)(0xE386u + s * 5);
+        uint8_t act = rl_ram_rb(e), code = rl_ram_rb((uint16_t)(e + 1));
+        if (!act || code < 0x30u || code >= 0x36u || code == 0x34u) continue;
+        {
+            int scol = rl_ram_rb((uint16_t)(e + 2)) + 1;
+            int srow = rl_ram_rb((uint16_t)(e + 3)) + 4;
+            Block *b = &g_block[g_block_n++];
+            b->active = 1;
+            b->scol = b->sc0 = scol;
+            b->srow = b->sr0 = srow;
+            for (int dr = 0; dr < BH; dr++)
+                for (int dc = 0; dc < BW; dc++) {
+                    rl_cell_gfx(srow + dr, scol + dc, b->gfx[dr * BW + dc]);
+                    rl_cell_blank(srow + dr, scol + dc);   /* se dibuja dinámico */
+                }
+        }
     }
 }
 

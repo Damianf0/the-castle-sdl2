@@ -1,13 +1,11 @@
 /*
  * THE CASTLE — Llaves de colores (recolección + inventario por color).
- * Las llaves son tiles con forma de llave repartidos por el escenario
- * (keys_data.c, detectados de la VRAM real, excluyendo los íconos de requisito
- * que están sobre las puertas). Se recogen al tocarlas; se acumulan por color y
- * se ven en el marcador del HUD. Los bloques empujables (tabla COLL) son otra
- * cosa y NO se recogen acá.
+ * Fuente: tabla 0xE3D6 del ROOM LOADER (val >= 0x2A ⇒ llave, color=val-0x2A,
+ * dispatcher real sub_5BB0). El loader las dibuja con su gráfico real; al
+ * recogerlas se blanquean sus celdas. Los bloques (tabla COLL) NO van acá.
  */
 #include "keys_port.h"
-#include "keys_data.h"
+#include "room_loader.h"
 
 PortKey g_pkey[KEY_MAX];
 int     g_pkey_n;
@@ -19,15 +17,17 @@ uint8_t g_key_color[KEY_COLORS];
  * 0=azul 1=rojo 2=magenta 3=verde 4=cyan 5=amarillo. */
 const uint8_t KEY_COLMSX[KEY_COLORS] = { 4, 8, 13, 2, 7, 10 };
 
-/* Bitmap 16x16 de la llave (forma real extraída del name table del ROM):
- * anillo en la cabeza + caña + dientes. Bit 15 = columna 0. */
-const uint16_t KEY_BMP[16] = {
-    0x0000,0x0000,0x03C0,0x0660,0x07E0,0x07E0,0x07E0,0x03C0,
-    0x0180,0x01C0,0x0180,0x01E0,0x01E0,0x0180,0x0000,0x0000 };
-
-/* estado PERSISTENTE de llaves ya recogidas (no reaparecen al volver) */
-static uint8_t s_ktaken[100][KEY_MAX];
+/* estado PERSISTENTE de llaves ya recogidas, por slot 0xE3D6 (16/sala) */
+static uint8_t s_ktaken[100][16];
 static int     s_kidx;
+
+/* blanquea el gráfico 2x2 de una llave en la VRAM */
+static void key_blank(const PortKey *p)
+{
+    for (int dr = 0; dr < p->sh; dr++)
+        for (int dc = 0; dc < p->sw; dc++)
+            rl_cell_blank(p->srow + dr, p->scol + dc);
+}
 
 void keys_room_init(unsigned char room)
 {
@@ -37,15 +37,23 @@ void keys_room_init(unsigned char room)
     int idx = ry * 10 + rx;
     s_kidx = idx;
     for (int c = 0; c < KEY_COLORS; c++) g_key_color[c] = KEY_COLMSX[c];
-    int n = KEY_COUNT[idx];
-    for (int i = 0; i < n && g_pkey_n < KEY_MAX; i++) {
-        const KeySpawn *k = &KEY_DATA[idx][i];
-        PortKey *p = &g_pkey[g_pkey_n++];
-        p->active = s_ktaken[idx][i] ? 0 : 1;   /* ya recogida -> no aparece */
-        p->color  = k->color < KEY_COLORS ? k->color : 0;
-        p->scol = k->scol; p->srow = k->srow;
-        p->sw = k->sw ? k->sw : 2; p->sh = k->sh ? k->sh : 2;
-        g_key_color[p->color] = KEY_COLMSX[p->color];
+    /* tabla 0xE3D6 del loader: 16 slots × [activo, val, col, fila] */
+    for (int s = 0; s < 16 && g_pkey_n < KEY_MAX; s++) {
+        uint16_t e = (uint16_t)(0xE3D6u + s * 4);
+        uint8_t act = rl_ram_rb(e), val = rl_ram_rb((uint16_t)(e + 1));
+        if (!act || val < 0x2Au) continue;
+        int scol = rl_ram_rb((uint16_t)(e + 2)) + 1;
+        int srow = rl_ram_rb((uint16_t)(e + 3)) + 4;
+        if (scol > 30 || srow > 22) continue;
+        {
+            PortKey *p = &g_pkey[g_pkey_n++];
+            p->active = s_ktaken[idx][s] ? 0 : 1;   /* ya recogida -> no aparece */
+            p->color  = (uint8_t)((val - 0x2Au < KEY_COLORS) ? val - 0x2Au : 0);
+            p->slot   = (uint8_t)s;
+            p->scol = scol; p->srow = srow;
+            p->sw = 2; p->sh = 2;
+            if (!p->active) key_blank(p);           /* recogida: borrar el horneado */
+        }
     }
 }
 
@@ -59,8 +67,9 @@ void keys_update(int px, int py, int pw, int ph)
         int kx2 = kx + p->sw * 8, ky2 = ky + p->sh * 8;
         if (px < kx2 && px + pw > kx && py < ky2 && py + ph > ky) {
             g_key_inv[p->color]++;
-            p->active = 0;   /* recogida: se blanquea en debug_draw_geom */
-            if (i < KEY_MAX) s_ktaken[s_kidx][i] = 1;   /* persiste: no reaparece */
+            p->active = 0;
+            key_blank(p);                          /* desaparece de la pantalla */
+            if (p->slot < 16) s_ktaken[s_kidx][p->slot] = 1;   /* persiste */
         }
     }
 }

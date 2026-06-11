@@ -37,10 +37,6 @@
 #include "doors_port.h"
 #include "blocks_port.h"
 #include "tiledata.h"
-#include "colmap_data.h"
-#include "doors_data.h"
-#include "keys_data.h"
-#include "items_data.h"
 #include "room_loader.h"
 
 /* ==========================================================================
@@ -306,14 +302,16 @@ static void main_loop(void)
 void faithful_play(uint8_t start_room)
 {
     uint8_t room = start_room;
+    rl_reset();                /* estado de partida (sub_4D52): vidas, persistencia */
     geom_decode_room(room);
+    rl_load_room(room);        /* sala desde el ROM: VRAM + tablas (sub_64DD) */
     actors_init_room(room, 0);
     enemies_room_init(room);
     keys_room_init(room);
     items_room_init(room);
     doors_room_init(room);
     blocks_room_init(room);
-    g_actors_on = 1;   /* activa el render de geometría real + actores */
+    g_actors_on = 1;   /* activa el overlay de actores sobre el render del VDP */
 
     while (hal_poll_events()) {
         uint8_t dir = hal_joystick_read(0);
@@ -335,6 +333,7 @@ void faithful_play(uint8_t start_room)
             else if (edge == 7) lo = (lo == 0) ? 9 : lo - 1;
             room = (uint8_t)((hi << 4) | lo);
             geom_decode_room(room);
+            rl_load_room(room);
             actors_init_room(room, edge);
             enemies_room_init(room);
             keys_room_init(room);
@@ -508,6 +507,8 @@ int main(int argc, char *argv[])
             geom_decode_room(room);
             if (getenv("CASTLE_ACTORS")) {
                 /* captura animada: simula frames con jugador+enemigos y guarda secuencia */
+                rl_reset();
+                rl_load_room(room);
                 actors_init_room(room, 0);
                 enemies_room_init(room);
                 keys_room_init(room);

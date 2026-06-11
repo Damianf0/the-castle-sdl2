@@ -19,7 +19,7 @@ typedef struct {
     uint8_t  flags;
     int      dir;
     int      anim;
-    uint16_t gfx[8];        /* tiles reales del enemigo (auto-detectados de la VRAM) */
+    uint8_t  gfx[8][16];    /* celdas del gráfico: 8 bytes patrón + 8 color (VRAM) */
     int      gw, gox;       /* ancho del gráfico (tiles) y offset de columna vs spawn */
     int      face, face0;   /* dirección actual y nativa (+1 der, -1 izq, 0 sin) -> espejo */
 } PortEnemy;

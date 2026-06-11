@@ -6,8 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "actors.h"
-#include "map_real.h"
-#include "colmap_data.h"
+#include "room_loader.h"
 #include "enemies_port.h"
 #include "doors_port.h"
 #include "blocks_port.h"
@@ -150,13 +149,14 @@ void actors_init_room(unsigned char room, int entry_edge)
     int ry = room >> 4, rx = room & 0x0F;
     g_room_idx = ry * 10 + rx;
 
-    /* Cargar el TILEMAP DE COLISIÓN REAL de la sala (copia de trabajo).
+    /* Cargar el TILEMAP DE COLISIÓN REAL de la sala (copia de trabajo) desde
+     * la RAM del room loader (0xE496, recién decodificada del ROM).
      * Las celdas 0xA8 (bloques empujables) se limpian: los bloques se simulan
      * dinámicos (block_solid) y se mueven; el resto queda tal cual el ROM.
      * Las puertas (A0/A2) quedan sólidas; doors_room_init limpia las abiertas. */
     for (int r = 0; r < CM_ROWS; r++)
         for (int c = 0; c < CM_COLS; c++) {
-            uint8_t v = COLMAP[g_room_idx][r][c];
+            uint8_t v = rl_ram_rb((uint16_t)(0xE496u + r * 30 + c));
             s_cm[r][c] = (v == CM_BLOCK) ? 0 : v;
         }
 

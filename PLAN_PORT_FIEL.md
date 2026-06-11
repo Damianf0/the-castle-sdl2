@@ -39,10 +39,10 @@
 
 ## Fases
 
-> Estado: Fase 0 ✅ · Fase 1 ✅ (título byte-idéntico) · Fase 2 NÚCLEO ✅
-> (2026-06-11: room_loader.c = sub_64DD fiel, 700/700 fixtures byte-exactos
-> incl. VRAM completa; falta conmutar el runtime de la maqueta y borrar las
-> tablas horneadas) · Fase 3 ← SIGUIENTE (tras el switchover)
+> Estado: Fase 0 ✅ · Fase 1 ✅ (título byte-idéntico) · Fase 2 ✅ COMPLETA
+> (2026-06-11: room_loader.c = sub_64DD fiel, 700/700 fixtures; runtime
+> conmutado, tablas horneadas BORRADAS, exe 403→173 KB) · Fase 3 ← SIGUIENTE
+> (jugador desde el disasm: sub_4064/sub_40BB, validar contra trazas)
 
 ### Fase 0 — Harness de verificación + saneamiento ✅
 - Runner de comparación: corre el port en modo headless (`CASTLE_SHOT`/dump de

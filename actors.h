@@ -5,6 +5,14 @@
 
 #define MAX_ENEMIES 4
 
+/* Pantalla MSX en tiles y campo de colisión real (RAM 0xE496 del loader) */
+#define RT_COLS  32
+#define RT_ROWS  24
+#define CM_ROWS  20      /* filas del campo (pantalla -4) */
+#define CM_COLS  30      /* columnas del campo (pantalla -1) */
+#define CM_SOLID 0x80u   /* bit que bloquea al jugador */
+#define CM_BLOCK 0xA8u   /* celda de bloque empujable */
+
 /* estado leído por el renderer (hal_sdl2.c) */
 extern int g_player_px, g_player_py, g_player_face, g_player_anim;
 extern int g_player_moving;   /* 1 si el jugador se movió horizontal este frame */

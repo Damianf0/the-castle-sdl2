@@ -832,6 +832,22 @@ void rl_boot_vram(void)
     boot_tiles();                                   /* game start: sub_4D52 */
 }
 
+/* ===== helpers para el motor (capa maqueta) ===== */
+void rl_cell_gfx(int srow, int scol, uint8_t out[16])
+{
+    uint8_t tile = hal_vdp_read_vram((uint16_t)(NAME_BASE + srow * 32 + scol));
+    uint16_t off = (uint16_t)((srow / 8) * 0x800 + tile * 8u);
+    for (int r = 0; r < 8; r++) {
+        out[r * 2]     = hal_vdp_read_vram((uint16_t)(PAT_BASE + off + r));
+        out[r * 2 + 1] = hal_vdp_read_vram((uint16_t)(COL_BASE + off + r));
+    }
+}
+void rl_cell_blank(int srow, int scol)
+{
+    if (srow < 0 || srow >= 24 || scol < 0 || scol >= 32) return;
+    hal_vdp_write_vram((uint16_t)(NAME_BASE + srow * 32 + scol), 0x00u);
+}
+
 /* ==========================================================================
  * API
  * ========================================================================== */

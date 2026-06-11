@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-06-11 (3) — Fase 2 COMPLETA: runtime conmutado al room loader; −580 KB de tablas
+
+### El juego ahora decodifica TODO desde el ROM en runtime
+`faithful_play()` llama `rl_load_room()` (sub_64DD portado): la VRAM emulada
+queda con la sala real y el VDP la renderiza nativo. ELIMINADOS del repo:
+`colmap_data.c` (319 KB), `map_real.c` (220 KB), `keys/doors/items/
+blocks_data.c` y sus generadores `gen_*.py`. El exe pasó de 403 KB a 173 KB.
+
+### Recableado de la capa maqueta (muere en Fases 3-5)
+- `actors.c`: colisión desde la RAM del loader (0xE496) — antes COLMAP[][].
+- `keys_port`/`items_port`: tablas 0xE3D6 del loader; al recoger se blanquea
+  la celda en VRAM (el gráfico horneado real desaparece). Persistencia por
+  slot. Fuera el bitmap sintético KEY_BMP: las llaves se ven con su gráfico
+  real del ROM.
+- `doors_port`: tabla 0xE346; persistencia de abiertas por POSICIÓN (cubre a
+  la gemela de la sala vecina sin necesitar su tabla). Al abrir: blanqueo en
+  VRAM + clear de colisión.
+- `blocks_port`: bloques desde la tabla COLL 0xE386 (códigos 0x30-0x35; el
+  0x34 son trampas — Fase 4). Gráfico 2x2 capturado de la VRAM al cargar.
+- `enemies_port`: gráfico capturado de la VRAM (fuera ROOM_NT/RT_TILES);
+  spawn blanqueado; movimiento sigue siendo path-replay (Fase 4).
+- `hal_sdl2.c`: `debug_draw_geom` quedó reducido a overlay de actores
+  (bloques/jugador/enemigos/inventario); el fondo es el render del VDP.
+
+Harness 10/10 (las suites del loader validan el mismo código que ahora corre
+el juego). Verificación visual: sala 0x70 jugable con llave/puerta/olla/
+arqueros desde el ROM.
+
 ## 2026-06-11 (2) — Fase 2 (núcleo): ROOM LOADER portado, 700/700 fixtures byte-exactos
 
 ### room_loader.c = sub_64DD fiel, instrucción a instrucción

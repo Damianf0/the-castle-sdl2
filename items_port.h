@@ -10,6 +10,7 @@
 typedef struct {
     uint8_t active;       /* 1 = sin recoger (visible/horneado) */
     uint8_t val;          /* tipo 0xE3D6 (0x22..0x29) */
+    uint8_t slot;         /* slot en la tabla 0xE3D6 (persistencia) */
     int     scol, srow;   /* tile de pantalla (esquina sup-izq, 2x2) */
 } PortItem;
 

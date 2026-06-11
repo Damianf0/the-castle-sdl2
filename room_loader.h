@@ -27,4 +27,10 @@ void rl_load_room(uint8_t room_bcd);
  * van pisando. Necesario para comparar la VRAM completa contra fixtures. */
 void rl_boot_vram(void);
 
+/* Helpers para el motor (capa maqueta hasta Fases 3-5):
+ * lee los 16 bytes (8 patrón + 8 color) del tile visible en una celda de
+ * pantalla, resolviendo el tercio; y blanquea una celda (tile 0). */
+void rl_cell_gfx(int srow, int scol, uint8_t out[16]);
+void rl_cell_blank(int srow, int scol);
+
 #endif

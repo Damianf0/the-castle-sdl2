@@ -62,6 +62,7 @@ python tests/run_tests.py --no-build
 - **Tile 0x00 no se carga en el boot**: conserva el estado INIGRP del BIOS (patrón 0, color 0x01).
 - **HUD estático vs dinámico:** `draw_hud()` = solo lo que dibuja el boot (labels/map/logo/NO-MAP); score/llaves/corazones = `draw_hud_dynamic()` (sub_5A2D, por frame de juego). En el título NO se ven (oráculo).
 - **Stubs in `main.c`:** `update_roller_by_pos()` and `update_bat_by_slot()` are temporary wrappers in `main.c` that `doors.c` depends on.
+- **ROOM LOADER (Fase 2, 2026-06-11):** `room_loader.c` = port fiel de sub_64DD. Las salas se decodifican del ROM en runtime (700/700 fixtures byte-exactos). El gameplay (`faithful_play`) llama `rl_load_room()`: VRAM con la sala real (el VDP la renderiza nativo) + tablas RAM (colmap 0xE496, puertas 0xE346, items 0xE3D6, COLL 0xE386, BAT 0xE416, estructurales 0xE43E). Los módulos `*_port` leen esas tablas vía `rl_ram_rb()`. Las tablas horneadas (colmap_data/map_real/keys_data/doors_data/items_data/blocks_data) FUERON BORRADAS.
 - **Two map layers:** `g_map[0x400]` (20×30 collision map) and `g_tilemap[]` (30×30 visual map).
 - **BCD room coords:** `g_room_x` uses BCD (hi-nibble=row, lo-nibble=column). Arithmetic is DAA-style, not binary.
 - **Tiles loaded from ROM at runtime.** `tiles.c` reads raw 16-byte interleaved tiles from the game ROM using `TILE_MAP[]`. Hardcoded `VRAM_TILES[]` and `vram_tiles.c` removed.

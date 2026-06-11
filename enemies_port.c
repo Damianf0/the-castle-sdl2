@@ -12,9 +12,11 @@
  * que es la velocidad real verificada. Coords = (row,col) de la tabla BAT.
  */
 #include <stdlib.h>
+#include <string.h>
 #include "enemies_port.h"
 #include "enemies_paths.h"
-#include "map_real.h"
+#include "room_loader.h"
+#include "actors.h"
 
 PortEnemy g_pen[EN_MAX];
 int       g_pen_n;
@@ -38,15 +40,8 @@ void enemies_room_init(unsigned char room)
     int n = PATH_ROOM_CNT[idx];
     int off = PATH_ROOM_OFF[idx];
 
-    /* tile de fondo del cuarto = el más frecuente (para blanquear horneados) */
-    {
-        static int freq[RT_COUNT];
-        for (int t = 0; t < RT_COUNT; t++) freq[t] = 0;
-        for (int r = 0; r < RT_ROWS; r++)
-            for (int c = 0; c < RT_COLS; c++) freq[ROOM_NT[idx][r][c]]++;
-        int best = -1; g_room_air = 0;
-        for (int t = 0; t < RT_COUNT; t++) if (freq[t] > best) { best = freq[t]; g_room_air = t; }
-    }
+    g_room_air = 0;   /* blanqueo = tile 0 (el mismo que usa el ROM para borrar) */
+
     for (int i = 0; i < n && g_pen_n < EN_MAX; i++) {
         const PathEnemy *pe = &PATH_ENEMIES[off + i];
         PortEnemy *p = &g_pen[g_pen_n];
@@ -56,16 +51,20 @@ void enemies_room_init(unsigned char room)
         p->row = PATH_POS[pe->poff][0];
         p->col = PATH_POS[pe->poff][1];
         p->flags = 0; p->dir = 0; p->anim = 0;
-        /* Gráfico REAL del enemigo, horneado en map_real en screen tile
-         * (sc+4 fila, sr+2 columna), tamaño 2x2 (verificado vs VRAM real, sala
-         * 0x70). El +2 de columna evita agarrar objetos del fondo vecinos. */
+        /* Gráfico REAL del enemigo horneado por el loader en screen tile
+         * (sc+4 fila, sr+2 columna), 2x2. Se captura de la VRAM y se blanquea
+         * el spawn (el enemigo se dibuja dinámico en su posición actual). */
         int base_r = p->sc + 4, base_c = p->sr + EN_COL_OFS;
         p->gw = 2; p->gox = EN_COL_OFS;
         for (int dr = 0; dr < 2; dr++)
             for (int dc = 0; dc < 2; dc++) {
                 int rr = base_r + dr, cc = base_c + dc;
-                p->gfx[dr * 4 + dc] = (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS)
-                                    ? ROOM_NT[idx][rr][cc] : (uint16_t)g_room_air;
+                if (rr >= 0 && rr < RT_ROWS && cc >= 0 && cc < RT_COLS) {
+                    rl_cell_gfx(rr, cc, p->gfx[dr * 4 + dc]);
+                    rl_cell_blank(rr, cc);
+                } else {
+                    memset(p->gfx[dr * 4 + dc], 0, 16);
+                }
             }
         /* facing nativo = dirección del primer movimiento horizontal del ciclo */
         p->face0 = 0;

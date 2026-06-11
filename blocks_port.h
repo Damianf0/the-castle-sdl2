@@ -11,7 +11,7 @@ typedef struct {
     uint8_t  active;
     int      scol, srow;     /* posición actual (tiles pantalla) */
     int      sc0, sr0;       /* posición de spawn (para blanquear el horneado) */
-    uint16_t gfx[4];         /* 2x2 tiles del bloque (dedup idx de RT_TILES) */
+    uint8_t  gfx[4][16];     /* 2x2 celdas: 8 bytes patrón + 8 color c/u (VRAM) */
 } Block;
 
 extern Block g_block[BLOCK_MAX];
