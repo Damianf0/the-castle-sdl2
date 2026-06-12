@@ -225,7 +225,7 @@ bool hal_init(bool pal_timing)
 
     /* Valores por defecto de Screen 2 (MSX BIOS INITXT + INIT32) */
     vdp_reg[0] = 0x00;  /* modo 0 */
-    vdp_reg[1] = 0xC0;  /* 16×16 sprites, pantalla activa */
+    vdp_reg[1] = 0xE2;  /* pantalla activa + IE + sprites 16x16 (bit 1) */
     vdp_reg[2] = 0x06;  /* name table  @ 0x1800 (0x06 << 10) */
     vdp_reg[3] = 0xFF;  /* color table @ 0x2000 (en modo Gr2, FF) */
     vdp_reg[4] = 0x03;  /* pattern     @ 0x0000 (0x03 << 11 → pero en Gr2 0x0000) */
@@ -396,7 +396,7 @@ void hal_vdp_init_screen2(void)
 {
     /* Screen 2 (Graphics II): 256×192, 16 colores por fila de 8 pixels */
     vdp_reg[0] = 0x02;  /* M3=1 → Graphics II */
-    vdp_reg[1] = 0xC0;  /* IE=1 (int vsync), M1=0, M2=0, sprites 16×16 */
+    vdp_reg[1] = 0xE2;  /* pantalla + IE + sprites 16x16 (bit 1 = SIZE) */
     vdp_reg[2] = 0x06;  /* name table 0x1800  */
     vdp_reg[3] = 0xFF;  /* color table 0x2000 (en Gr2 = 0xFF×64) */
     vdp_reg[4] = 0x03;  /* pattern 0x0000 (en Gr2) */
@@ -414,9 +414,15 @@ void hal_vdp_disable_screen(void)
 
 void hal_vdp_clear_sprites(void)
 {
-    /* Poner el sprite Y de todos los slots a 0xD0 (= sprite terminador en TMS9918) */
+    /* Blanquear como el juego real (sub_4D52/sub_5327): Y=0xFF fuera de
+     * pantalla + patrón 0x3F (vacío). NUNCA el terminador 0xD0 — cortaría
+     * la lista y los sprites del jugador (8-10) no se dibujarían más. */
     for (int i = 0; i < 32; i++) {
-        vram[vdp_spr_attr + (uint16_t)(i * 4)] = 0xD0;
+        uint16_t a = (uint16_t)(vdp_spr_attr + i * 4);
+        vram[a]     = 0xFF;
+        vram[a + 1] = 0x00;
+        vram[a + 2] = (uint8_t)(0x3F * 4);
+        vram[a + 3] = 0x00;
     }
 }
 
