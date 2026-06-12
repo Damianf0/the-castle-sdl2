@@ -48,6 +48,7 @@ static uint8_t rom_rb_p(uint16_t a)
     return (g_rom && o < g_rom_size) ? g_rom[o] : 0xFFu;
 }
 static void s_6F27(uint8_t frame);
+static uint8_t s_4273(uint8_t b, uint8_t c, int dir);
 
 /* ===== acceso al espejo RAM del loader ===== */
 static uint8_t rr(uint16_t a)            { return rl_ram_rb(a); }
@@ -249,16 +250,17 @@ static void s_40BB(uint8_t *outD, uint8_t *outE)
     if (a != 0u)            l |= 0x04u;
     else if (h & 0x08u)     l |= 0x04u;
     else {
-        /* sub_4248/sub_425A -> sub_42FF (solo frames PARES, 5D5D): puerta en
-         * la celda del trampolin (der: b+2, izq: b-1); si hay, intenta abrir
-         * (rl_door_press = sub_4325+sub_758C) y bloquea el paso ese frame.
-         * Empuje de bloques (sub_4273) pendiente - Fase 5. */
+        /* sub_4248/sub_425A (solo frames PARES, 5D5D): primero puerta
+         * (sub_42FF -> rl_door_press), si no, empuje de bloque (sub_4273).
+         * Cualquiera de los dos en "bloqueado" corta el avance del frame. */
         if ((rr(0xEAC9u) & 0x01u) == 0u) {
             if (h & 0x01u) {
-                if (rl_door_press((uint8_t)(b + 2u), c)) h &= (uint8_t)~0x01u;
+                if (rl_door_press((uint8_t)(b + 2u), c))      h &= (uint8_t)~0x01u;
+                else if (!s_4273(b, c, +1))                   h &= (uint8_t)~0x01u;
             }
             if (h & 0x02u) {
-                if (rl_door_press((uint8_t)(b - 1u), c)) h &= (uint8_t)~0x02u;
+                if (rl_door_press((uint8_t)(b - 1u), c))      h &= (uint8_t)~0x02u;
+                else if (!s_4273(b, c, -1))                   h &= (uint8_t)~0x02u;
             }
         }
     }
@@ -365,6 +367,229 @@ static void s_6F5C(uint8_t d, uint8_t e)
     }
     s_6F45_pixel();
     s_6F94_anim(e);
+}
+
+/* ==========================================================================
+ * MOTOR DE OBJETOS COLL (bloques empujables / rollers / trampas 0x34).
+ * Port fiel de: sub_434A (driver por frame) + sub_4820 (gravedad/derrape) +
+ * sub_710B (movedor en 2 fases con tiles de transicion: el alocador cargo
+ * 16 tiles por bloque = 4 finales + 6 medio-paso horizontal (deltas 4-9) +
+ * 6 medio-paso vertical (10-15)) + sub_4273 (empuje del jugador, trampolin
+ * 0xEAFA) + sub_468A (lookup de objeto por celda) + sub_42F5/sub_5D47
+ * (aplastar BATs). Los escritores Z80 (70B6/70C2/70D5/7103) MUTAN H,L,D del
+ * caller - se modela con variables corridas.
+ * ========================================================================== */
+
+/* sub_468A: objeto en la celda (b,c). mode 2 = solo COLL (E386), mode 4 =
+ * solo BAT (E416). Devuelve 1 (NZ) con *ix/*slot si lo encontro. */
+static uint8_t s_468A(uint8_t mode, uint8_t b, uint8_t c,
+                      uint16_t *ix, uint8_t *slot)
+{
+    uint8_t v, s;
+    if (b >= 0x1Eu || c >= 0x14u) return 0;
+    v = cm(b, c);
+    if (!(v & 0x08u)) return 0;
+    s = (uint8_t)(e6ee(b, c) >> 3);
+    if (!(s & 0x10u)) {                     /* tabla COLL */
+        if (!(mode & 0x02u)) return 0;
+        if (ix)   *ix = (uint16_t)(0xE386u + s * 5u);
+        if (slot) *slot = s;
+        return 1;
+    }
+    if (!(mode & 0x04u)) return 0;          /* tabla BAT */
+    s &= 0x0Fu;
+    if (ix)   *ix = (uint16_t)(0xE416u + s * 5u);
+    if (slot) *slot = s;
+    return 1;
+}
+
+/* sub_49DC: destino de empuje/caida libre? NZ(1)=bloqueado. Un BAT en el
+ * destino cuenta como libre (sera aplastado por sub_42F5). */
+static uint8_t p_49DC(uint8_t b, uint8_t c)
+{
+    if (b >= 0x1Eu) return 1;
+    if (c >= 0x14u) return 0;
+    if (s_468A(0x04u, b, c, 0, 0)) return 0;
+    return (cm(b, c) & 0x30u) ? 1 : 0;
+}
+
+/* sub_44C2(A'): par vertical &0x30 en (b,c),(b,c+1); modo para (b,c+2):
+ * 2 = nada mas, 0 = &0x40 debe estar, otro = &0x20 debe estar. NZ=bloqueado */
+static uint8_t p_44C2(uint8_t ap, uint8_t b, uint8_t c)
+{
+    if (b > 0x1Du) return 1;
+    if (cm(b, c) & 0x30u) return 1;
+    if (cm(b, (uint8_t)(c + 1u)) & 0x30u) return 1;
+    if (ap == 2u) return 0;
+    if (ap == 0u) return (cm(b, (uint8_t)(c + 2u)) & 0x40u) ? 0 : 1;
+    return (cm(b, (uint8_t)(c + 2u)) & 0x20u) ? 0 : 1;
+}
+
+/* sub_5D47: mata el objeto (entry): slot[0]=0, blanquea su 2x2 y dispara el
+ * sonido (0xEAF6=0x32). (El "puff" de sprite de sub_5D63 - Fase 4.) */
+static void s_5D47(uint16_t ix)
+{
+    uint8_t h = rr((uint16_t)(ix + 2u)), l = rr((uint16_t)(ix + 3u));
+    wr(ix, 0u);
+    rl_cell_put(h, l, 0u, 0u, 0u);
+    rl_cell_put((uint8_t)(h + 1u), l, 0u, 0u, 0u);
+    rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0u, 0u, 0u);
+    rl_cell_put(h, (uint8_t)(l + 1u), 0u, 0u, 0u);
+    wr(0xEAF6u, 0x32u);
+}
+
+/* sub_42F5: si hay un BAT en (b,c) lo aplasta */
+static void s_42F5(uint8_t b, uint8_t c)
+{
+    uint16_t ix;
+    if (s_468A(0x04u, b, c, &ix, 0)) s_5D47(ix);
+}
+
+/* sub_710B: movedor/redibujador del objeto COLL segun sus flags (entry[4]):
+ * frame PAR: actualiza la celda logica y dibuja el grafico de TRANSICION
+ * (3x2 deltas 4-9 horizontal / 2x3 deltas 10-15 vertical);
+ * frame IMPAR: dibuja el 2x2 final (deltas 0-3) y blanquea lo que quedo. */
+static void s_710B(uint16_t ix, uint8_t slot)
+{
+    uint8_t code = rr((uint16_t)(ix + 1u));
+    uint8_t h = rr((uint16_t)(ix + 2u)), l = rr((uint16_t)(ix + 3u));
+    uint8_t f = rr((uint16_t)(ix + 4u));
+    uint8_t e = slot;
+    if (code == 0x34u) {
+        /* sub_61F5: trampa (particulas) - Fase 4 */
+    }
+    if (rr(0xEAC9u) & 0x01u) {
+        /* IMPAR: paso final */
+        if (f & 0x01u) {
+            if (!(f & 0x02u)) {
+                /* 7126 izquierda: 70B6 deja H=h+1,L=l+1 -> blanquea col h+2 */
+                rl_cell_put(h, l, code, 0u, e);
+                rl_cell_put((uint8_t)(h + 1u), l, code, 1u, e);
+                rl_cell_put(h, (uint8_t)(l + 1u), code, 2u, e);
+                rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, 3u, e);
+                rl_cell_put((uint8_t)(h + 2u), (uint8_t)(l + 1u), 0u, 0u, e);
+                rl_cell_put((uint8_t)(h + 2u), l, 0u, 0u, e);
+            } else {
+                /* 7137 derecha: blanquea col h-1 y dibuja el final */
+                rl_cell_put((uint8_t)(h - 1u), l, 0u, 0u, e);
+                rl_cell_put((uint8_t)(h - 1u), (uint8_t)(l + 1u), 0u, 0u, e);
+                rl_cell_put(h, l, code, 0u, e);
+                rl_cell_put((uint8_t)(h + 1u), l, code, 1u, e);
+                rl_cell_put(h, (uint8_t)(l + 1u), code, 2u, e);
+                rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, 3u, e);
+            }
+        } else if (f & 0x04u) {
+            /* 7155 abajo: blanquea fila l-1 y dibuja el final */
+            rl_cell_put(h, (uint8_t)(l - 1u), 0u, 0u, e);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l - 1u), 0u, 0u, e);
+            rl_cell_put(h, l, code, 0u, e);
+            rl_cell_put((uint8_t)(h + 1u), l, code, 1u, e);
+            rl_cell_put(h, (uint8_t)(l + 1u), code, 2u, e);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, 3u, e);
+        }
+        return;
+    }
+    /* PAR: actualizar celda + grafico de transicion */
+    if (f & 0x01u) {
+        uint8_t hg;
+        if (!(f & 0x02u)) { h--; wr((uint16_t)(ix + 2u), h); hg = h; }       /* izq */
+        else              { wr((uint16_t)(ix + 2u), (uint8_t)(h + 1u)); hg = h; } /* der */
+        /* sub_70C2: 3x2 deltas 4-9 en (hg..hg+2, l..l+1) */
+        rl_cell_put(hg, l, code, 4u, e);
+        rl_cell_put((uint8_t)(hg + 1u), l, code, 5u, e);
+        rl_cell_put((uint8_t)(hg + 2u), l, code, 6u, e);
+        rl_cell_put(hg, (uint8_t)(l + 1u), code, 7u, e);
+        rl_cell_put((uint8_t)(hg + 1u), (uint8_t)(l + 1u), code, 8u, e);
+        rl_cell_put((uint8_t)(hg + 2u), (uint8_t)(l + 1u), code, 9u, e);
+    } else if (f & 0x04u) {
+        wr((uint16_t)(ix + 3u), (uint8_t)(l + 1u));                          /* baja */
+        /* sub_70D5: 2x3 deltas 10-15 en (h..h+1, l..l+2) */
+        rl_cell_put(h, l, code, 10u, e);
+        rl_cell_put((uint8_t)(h + 1u), l, code, 11u, e);
+        rl_cell_put(h, (uint8_t)(l + 1u), code, 12u, e);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, 13u, e);
+        rl_cell_put(h, (uint8_t)(l + 2u), code, 14u, e);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 2u), code, 15u, e);
+    }
+}
+
+/* sub_4820: recomputa los flags del objeto (solo frames PARES):
+ * sin piso 2 celdas abajo -> CAE (aplastando BATs); sino derrape por
+ * pendiente (sub_47F5) limitado por las paredes (sub_44C2). */
+static uint8_t s_4820(uint8_t f, uint8_t b, uint8_t c)
+{
+    uint8_t h = f;
+    if (rr(0xEAC9u) & 0x01u) return h;          /* impar: sin cambios */
+    c += 2u;
+    if (!p_49DC(b, c) && !p_49DC((uint8_t)(b + 1u), c)) {
+        s_42F5(b, c); s_42F5((uint8_t)(b + 1u), c);
+        h &= (uint8_t)~0x01u;                   /* RES 0 */
+        h |= 0x04u;                             /* SET 2: cae */
+        h &= (uint8_t)~0x08u;                   /* RES 3 */
+        return h;
+    }
+    /* 4847: derrape por pendiente */
+    {
+        uint8_t mv = s_47F5(b, c);
+        h = 0u;
+        s_41F6(mv, &h);
+        c -= 2u; b += 2u;
+        if (p_44C2(2u, b, c)) h &= (uint8_t)~0x01u;
+        b -= 3u;
+        if (p_44C2(2u, b, c)) h &= (uint8_t)~0x02u;
+    }
+    return s_4210(h);
+}
+
+/* sub_434A: driver por frame de la tabla COLL (16 slots).
+ * Pasada 1: flags (4820) + mover (710B) los que NO son trampas;
+ * Pasada 2: mover las trampas 0x34. */
+void player_coll_frame(void)
+{
+    for (int s = 0; s < 16; s++) {
+        uint16_t ix = (uint16_t)(0xE386u + s * 5u);
+        if (!rr(ix)) continue;
+        {
+            uint8_t b = rr((uint16_t)(ix + 2u)), c = rr((uint16_t)(ix + 3u));
+            wr((uint16_t)(ix + 4u), s_4820(rr((uint16_t)(ix + 4u)), b, c));
+        }
+        if (rr((uint16_t)(ix + 1u)) != 0x34u) s_710B(ix, (uint8_t)s);
+    }
+    for (int s = 0; s < 16; s++) {
+        uint16_t ix = (uint16_t)(0xE386u + s * 5u);
+        if (!rr(ix)) continue;
+        if (rr((uint16_t)(ix + 1u)) == 0x34u) s_710B(ix, (uint8_t)s);
+    }
+}
+
+/* sub_4273: intento de empuje en la celda del trampolin (der: b+2, izq: b-1).
+ * Devuelve 1 (NZ) = el jugador puede avanzar; 0 (Z) = bloqueado. */
+static uint8_t s_4273(uint8_t b, uint8_t c, int dir)
+{
+    uint16_t ix1 = 0, ix2 = 0;
+    uint8_t s1 = 0, s2 = 0, f1, f2;
+    uint8_t bb = (uint8_t)(dir > 0 ? b + 2 : b - 1);
+    f1 = s_468A(0x02u, bb, c, &ix1, &s1);
+    f2 = s_468A(0x02u, bb, (uint8_t)(c + 1u), &ix2, &s2);
+    if (!f1 && !f2) return 1;                  /* sin objeto: avanza */
+    if (f1 && f2 && s1 != s2) return 0;        /* dos objetos distintos */
+    {
+        uint16_t ix = f2 ? ix2 : ix1;          /* 42A6: prioriza el segundo */
+        uint8_t f4 = rr((uint16_t)(ix + 4u));
+        uint8_t ob, oc, db;
+        if (f4 & 0x04u) return 0;              /* bit2: no empujable ahora */
+        if (f4 & 0x01u) return 1;              /* bit0: atravesable */
+        ob = rr((uint16_t)(ix + 2u));          /* sub_431C */
+        oc = rr((uint16_t)(ix + 3u));
+        db = (uint8_t)(dir > 0 ? ob + 2 : ob - 1);
+        if (p_49DC(db, oc)) return 0;
+        if (p_49DC(db, (uint8_t)(oc + 1u))) return 0;
+        s_42F5(db, (uint8_t)(oc + 1u));        /* aplasta BATs en el destino */
+        s_42F5(db, oc);
+        wr((uint16_t)(ix + 4u), (uint8_t)(dir > 0 ? 3u : 1u));   /* 0xEAFD */
+        s_710B(ix, f2 ? s2 : s1);              /* primer medio paso */
+        return 1;
+    }
 }
 
 /* sub_6F27: setea los 3 planos del jugador (sprites 8,9,10) */

@@ -933,6 +933,12 @@ void rl_room_exit(uint8_t edge)
 /* redibuja los iconos de llave del HUD (sub_5E01) — para el pickup */
 void rl_keys_hud_redraw(void) { s_5E01(); }
 
+/* sub_6A7C expuesto para el motor de objetos COLL (player.c) */
+void rl_cell_put(uint8_t h, uint8_t l, uint8_t c, uint8_t d, uint8_t e)
+{
+    s_6A7C(h, l, c, d, e);
+}
+
 /* ===== sub_4325 + sub_758C: puerta presionada por el jugador ===== */
 int rl_door_press(uint8_t b, uint8_t c)
 {

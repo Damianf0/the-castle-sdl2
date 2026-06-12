@@ -49,4 +49,9 @@ void rl_room_exit(uint8_t edge);
 /* redibuja los iconos de llave del HUD (sub_5E01) tras un pickup */
 void rl_keys_hud_redraw(void);
 
+/* sub_6A7C expuesto: escribe una celda de campo (colmap+E6EE via sub_5E80 y
+ * name table con el tile asignado del tercio + delta). Lo usa el motor de
+ * objetos COLL (player.c): bloques empujados, gravedad, blanqueos. */
+void rl_cell_put(uint8_t h, uint8_t l, uint8_t c, uint8_t d, uint8_t e);
+
 #endif

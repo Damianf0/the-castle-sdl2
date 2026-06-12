@@ -27,4 +27,9 @@ uint8_t player_take_exit(void);
  * sprite (sub_6F45 + sub_6F27 con frame 0). */
 void player_sync_pixel(void);
 
+/* sub_434A: motor por frame de los objetos COLL (bloques empujables con
+ * gravedad y derrape por rampas, trampas 0x34). Llamar ANTES de
+ * player_frame en cada frame (orden del game loop real). */
+void player_coll_frame(void);
+
 #endif

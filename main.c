@@ -320,6 +320,7 @@ void faithful_play(uint8_t start_room)
      * efectos reales son Fase 5), sin daño ni empuje de bloques todavía
      * (sub_4406 / sub_4273 — Fases 4-5). */
     while (hal_poll_events()) {
+        player_coll_frame();   /* sub_434A: bloques (gravedad/empuje) ANTES del jugador */
         player_frame(hal_joystick_read(0), hal_key_pressed() ? 1u : 0u);
         {
             uint8_t edge = player_take_exit();
@@ -478,6 +479,7 @@ int main(int argc, char *argv[])
                     case 'S': stick = 5u; break;
                     default: break;
                 }
+                player_coll_frame();   /* sub_434A: antes del jugador, como el loop real */
                 player_frame(stick, trig);
             }
             fclose(f);
@@ -583,6 +585,7 @@ int main(int argc, char *argv[])
                 for (int f = 0; f < nframes; f++) {
                     uint8_t stick = 0u, trig = 0u;
                     char m = (mv && f < (int)strlen(mv)) ? mv[f] : '.';
+                    player_coll_frame();
                     switch (m) {
                         case 'R': stick = 3u; break;
                         case 'L': stick = 7u; break;

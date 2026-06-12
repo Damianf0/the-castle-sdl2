@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-06-11 (6) — Motor COLL real: bloques empujables con gravedad
+
+### sub_434A + sub_4820 + sub_710B + sub_4273 portados (player.c)
+Los bloques (ollas/ladrillos, tabla 0xE386) ahora son objetos VIVOS del
+motor real:
+- **Empuje** (sub_4273, integrado en sub_4248/425A tras el chequeo de
+  puerta): valida el destino (sub_49DC — un BAT en el destino cuenta como
+  libre y es APLASTADO via sub_42F5/sub_5D47), marca field4=3/1 (formato de
+  flags de salida) y dispara el primer medio paso.
+- **Movedor en 2 fases** (sub_710B): frame PAR actualiza la celda lógica y
+  dibuja el gráfico de TRANSICIÓN (3x2 deltas 4-9 horizontal / 2x3 deltas
+  10-15 vertical — ¡para eso eran los 16 tiles que el alocador carga por
+  bloque!); frame IMPAR dibuja el 2x2 final y blanquea la columna/fila que
+  quedó atrás. CLAVE del RE: los escritores Z80 (70B6/70C2/70D5/7103) MUTAN
+  los registros H,L,D del caller — los blanqueos solo cierran modelando ese
+  flujo de registros.
+- **Gravedad y derrape** (sub_4820, por frame vía sub_434A): sin piso 2
+  celdas abajo → cae (aplastando BATs); con piso → deriva por pendiente
+  (sub_47F5) limitado por paredes (sub_44C2). El colmap se actualiza solo
+  (cada celda escrita pasa por sub_5E80) → la colisión del jugador sigue
+  al bloque automáticamente.
+- Trampas 0x34: estructura del 2º pase de sub_434A lista (partículas
+  sub_61F5 — Fase 4).
+
+Verificado: en la sala 0x71 el jugador empuja el ladrillo ~7 columnas por
+el corredor con transiciones visuales correctas. Trazas del jugador siguen
+6/6 (player_coll_frame en el loop no perturba), harness 11/11.
+
 ## 2026-06-11 (5) — Fase 3: SWITCHOVER — el gameplay corre con el jugador REAL
 
 ### faithful_play ahora es el motor fiel
