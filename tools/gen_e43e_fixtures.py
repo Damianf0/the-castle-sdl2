@@ -8,8 +8,12 @@ Uso: python tools/gen_e43e_fixtures.py [salaXX ...]"""
 import os, subprocess, sys
 
 OPENMSX = os.path.join('..', '_buildtools', 'openmsx', 'openmsx.exe')
-ROOMS = ['00', '02', '03', '06', '16', '33', '36', '42']
+ROOMS = ['00', '01', '02', '03', '06', '07', '16', '33', '36', '42']
 FRAMES = 300
+
+# Escenarios de EMPUJE (pistones 0x1B): sala -> (pcol, prow, dir, holdfrom).
+# El jugador arranca al lado de la trampa COLL 0x34 y mantiene la direccion.
+PUSH = {'01': (10, 5, 'R', 4)}
 
 
 def pick_cell(xx):
@@ -36,10 +40,16 @@ def main():
     outdir = os.path.join('tests', 'fixtures', 'e43e_tr')
     os.makedirs(outdir, exist_ok=True)
     for xx in rooms:
-        pcol, prow = pick_cell(xx)
+        hold = PUSH.get(xx)
+        if hold:
+            pcol, prow = hold[0], hold[1]
+        else:
+            pcol, prow = pick_cell(xx)
         bcd = int(xx, 16)
         with open('tr_e43e_in.txt', 'w') as f:
             f.write('%d %d %d %d' % (bcd, pcol, prow, FRAMES))
+            if hold:
+                f.write(' %s %d' % (hold[2], hold[3]))
         for fn in ('tr_e43e_out.txt', 'tr_e43e_done.txt', 'tr_e43e_err.txt'):
             if os.path.exists(fn):
                 os.remove(fn)
@@ -53,7 +63,10 @@ def main():
             raise SystemExit('sala %s: openMSX no produjo salida' % xx)
         out = os.path.join(outdir, 'e43e_tr_%s.txt' % xx)
         with open(out, 'w') as f:
-            f.write('# room %s pcol %d prow %d\n' % (xx, pcol, prow))
+            hdr = '# room %s pcol %d prow %d' % (xx, pcol, prow)
+            if hold:
+                hdr += ' hold %s from %d' % (hold[2], hold[3])
+            f.write(hdr + '\n')
             f.write(open('tr_e43e_out.txt').read())
         n = sum(1 for _ in open(out)) - 1
         print('  -> %s (%d frames)' % (out, n), flush=True)

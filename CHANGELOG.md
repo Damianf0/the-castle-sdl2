@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-06-12 — Fase 4 motor COMPLETO: pistón 0x1B + partículas reales
+
+- **Pistón vertical 0x1B** (6 salas): nace inerte; se dispara EMPUJANDO la
+  trampa COLL 0x34 (empuje izquierda = sube, derecha = baja) mientras ella
+  se desliza bajo su techo-marcador (rampa falsa con E6EE bit4). Sube
+  cargando al jugador/bloques apoyados en su pie y baja esperando a los
+  objetos que aún no caen. Cadena completa sub_61F5→735F→474E portada.
+- **Partículas**: el puff de desintegración real (sub_5D63: SFX + 3 frames
+  con los patrones 0x2C-0x2E en el plano de sprite 12, bloqueante como el
+  original) reemplaza al stub en s_5D47 y en las muertes del movedor BAT;
+  sub_6EE1 portado como helper genérico de planos de sprite con tintes.
+- **player_tail_frame (sub_623C)**: timer del sprite de partícula (0xEAF9,
+  plano 13) y timers de POWER-UP E343/E344 cada 16 frames — con la música
+  de aviso (transpose+5, speed 0xFF) y la restauración del tema al expirar.
+- Suite e43e ampliada a 10 salas: sala 01 valida el pistón con un
+  escenario de EMPUJE real (oráculo openMSX con el jugador libre
+  caminando con hold RIGHT — frame-exacto 301/301). Lección del oráculo:
+  el force-load pisa E334/E335 (el spawn correcto va por E322/E323).
+- 13/13 suites verdes.
+
 ## 2026-06-12 — Fase 4: estructurales e43e COMPLETOS (cintas, fuego, trampas 0x1F)
 
 - **442D terminado**: cintas transportadoras 0x0C/0x0D (tira animada de

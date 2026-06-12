@@ -255,12 +255,16 @@ def run(results):
         errs = []
         for bf in sorted(_g.glob(os.path.join(FIX, 'e43e_tr', 'e43e_tr_*.txt'))):
             lines = open(bf).read().splitlines()
-            hdr = lines[0].split()        # "# room XX pcol P prow R"
+            # "# room XX pcol P prow R [hold H from F]" (hold = empuje 0x34)
+            hdr = lines[0].split()
             xx, pcol, prow = hdr[2], hdr[4], hdr[6]
             out = os.path.join(tempfile.gettempdir(), 'e43etrace_%s.txt' % xx)
             env = dict(os.environ, CASTLE_E43TRACE=out, CASTLE_ROOM=xx,
                        CASTLE_FRAMES=str(len(lines) - 1),
                        CASTLE_PCOL=pcol, CASTLE_PROW=prow)
+            if 'hold' in hdr:
+                env['CASTLE_HOLD'] = hdr[hdr.index('hold') + 1]
+                env['CASTLE_HOLDFROM'] = hdr[hdr.index('from') + 1]
             r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
                                text=True, timeout=60)
             if r.returncode != 0 or not os.path.exists(out):

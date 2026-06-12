@@ -204,12 +204,25 @@ superficie=piso, cadenas no. Salas 29/81 frame-exactas 301/301.
   40BB y la pausa leen el stick 0xEACB; no hay trepado) — el bloque
   0x4586 ya se portó con los BATs.
 
-Pendiente de la fase: tipo 0x1B (móvil vertical 2 celdas, 6 salas:
-01/07/23/38/41/43, nace estado=0 INERTE): lo dispara la trampa COLL 0x34
-vía sub_61F5 (A=4 abajo / 0x0C arriba según bit1, chequea pisada con
-4A38&0x10) → sub_735F (cerebro sub_474E + drawer 738B/739C, tiles 0x1B
-deltas 2-10) — leer 474E completo (4770-47B7) antes de portar. Y las
-partículas visuales (sub_5D63 puff de sprites, 0xEAF9/61F5-area).
+**Pistón 0x1B + partículas ✅ (2026-06-12)** — Fase 4 motor COMPLETO:
+- 0x1B = pistón vertical 2 columnas (cabeza 1 fila deltas 3/4 + hueco de
+  3 + pie deltas 5/6 en fila+4; moviendo: 2x2 deltas 7-10 y 11-14). Nace
+  INERTE; lo dispara la trampa COLL 0x34 al ser EMPUJADA (s_4273 escribe
+  flags 3=der/1=izq; 61F5: bit0=gate, bit1: der=BAJAR izq=SUBIR; en
+  frames pares exige el marcador rampa-falsa E6EE bit4 sobre la 0x34).
+  Cerebro 474E: subir = probes 4515(c-1)/4541(c+3) + CARGA lo apoyado en
+  el pie (4744); bajar = 4541(c+1) + espera objetos que no caen (47A1) +
+  4566(c+5). Drawer 735F: par mueve, impar asienta y LIMPIA el estado.
+  Validado con escenario de EMPUJE real (oráculo con jugador libre +
+  hold RIGHT: sala 01 frame-exacta; OJO: el force-load pisa E334/E335 —
+  el spawn va por E322/E323).
+- Partículas: sub_5D63 real (puff: SFX 0xEAF6=0x32 + 3 frames BLOQUEANTES
+  con patrones 0x2C-0x2E en el plano de sprite 12 vía sub_6EE1 genérico)
+  en s_5D47 y las 2 muertes del movedor BAT. sub_623C (cola del loop,
+  player_tail_frame): timer 0xEAF9 del sprite de partícula (plano 13) +
+  timers de power-up E343/E344 cada 16 frames (aviso musical EAF2=5/
+  EAF4=0xFF bajo 6, restauración del tema al llegar a 0 vía 6281).
+  (0xEAF9 lo armará el pickup real — Fase 5, escritor en 0x5C7E.)
 
 Mapa original (referencia):
 - Driver `sub_438D`: tabla 0xE416 (8 slots). Pasada 1: cerebro `sub_43BF`

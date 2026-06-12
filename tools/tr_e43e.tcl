@@ -1,16 +1,24 @@
-# Oraculo de ESTRUCTURALES e43e: lee "room_decimal pcol prow frames" de
-# tr_e43e_in.txt, arranca el juego, force-carga la sala, FIJA al jugador
-# (invulnerable) y traza por frame los 16 slots e43e: tipo,col,fila,f3,estado.
+# Oraculo de ESTRUCTURALES e43e: lee "room_decimal pcol prow frames [holddir
+# holdfrom]" de tr_e43e_in.txt, arranca el juego, force-carga la sala y traza
+# por frame los 16 slots e43e: tipo,col,fila,f3,estado. Sin hold: jugador
+# FIJADO (invulnerable). Con hold R/L: el jugador queda libre y desde el
+# frame holdfrom mantiene esa direccion (escenarios de EMPUJE de la 0x34).
 # Salida -> tr_e43e_out.txt (mismo formato que CASTLE_E43TRACE del port).
 set throttle off
 set fp [open "tr_e43e_in.txt" r]
-lassign [string trim [read $fp]] ::room ::pcol ::prow ::nframes
+set ::hold ""
+set ::holdfrom 0
+lassign [string trim [read $fp]] ::room ::pcol ::prow ::nframes ::hold ::holdfrom
 close $fp
 set ::fc -1
 set ::log {}
 proc sample {} {
-    debug write memory 0xe334 $::pcol
-    debug write memory 0xe335 $::prow
+    if {$::hold eq ""} {
+        debug write memory 0xe334 $::pcol
+        debug write memory 0xe335 $::prow
+    } elseif {$::fc == $::holdfrom} {
+        keymatrixdown 8 [expr {$::hold eq "L" ? 16 : 128}]
+    }
     debug write memory 0xeae0 0
     debug write memory 0xe343 1
     if {$::fc == -1} { set ::fc 0 }
@@ -33,6 +41,9 @@ proc sample {} {
 }
 proc forceload {} {
     debug write memory 0xe320 $::room
+    # punto de entrada: el loader respawnea al jugador desde E322/E323
+    debug write memory 0xe322 $::pcol
+    debug write memory 0xe323 $::prow
     debug write memory 0xe334 $::pcol
     debug write memory 0xe335 $::prow
     set sp [expr {[reg SP] - 2}]

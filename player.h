@@ -50,6 +50,11 @@ void player_elev_frame(void);
  * Llamar DESPUÉS de player_frame y ANTES de player_bats_frame. */
 void player_traps_frame(void);
 
+/* sub_623C: cola del frame — timer del sprite de partícula (0xEAF9) y
+ * timers de power-up E343/E344 (cada 16 frames, con la música de aviso y
+ * la restauración del tema). Llamar DESPUÉS de player_end_frame. */
+void player_tail_frame(void);
+
 /* sub_434A: motor por frame de los objetos COLL (bloques empujables con
  * gravedad y derrape por rampas, trampas 0x34). Llamar ANTES de
  * player_frame en cada frame (orden del game loop real). */

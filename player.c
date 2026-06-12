@@ -49,6 +49,8 @@ static uint8_t rom_rb_p(uint16_t a)
 }
 static void s_6F27(uint8_t frame);
 static uint8_t s_4273(uint8_t b, uint8_t c, int dir);
+static void s_61F5(uint8_t flags, uint8_t b, uint8_t c);
+extern int g_actors_on;   /* modo interactivo: el puff 5D63 consume frames */
 
 /* ===== acceso al espejo RAM del loader ===== */
 static uint8_t rr(uint16_t a)            { return rl_ram_rb(a); }
@@ -425,8 +427,55 @@ static uint8_t p_44C2(uint8_t ap, uint8_t b, uint8_t c)
     return (cm(b, (uint8_t)(c + 2u)) & 0x20u) ? 0 : 1;
 }
 
-/* sub_5D47: mata el objeto (entry): slot[0]=0, blanquea su 2x2 y dispara el
- * sonido (0xEAF6=0x32). (El "puff" de sprite de sub_5D63 - Fase 4.) */
+/* sub_6EE1: setea un plano de sprite genérico: patrón a (attr = a*4, 16x16),
+ * color de la tabla (0x7CF0)+a con los tintes de sala (el 8 parpadea blanco
+ * con E343 / verde con E344), posición (x,y) en pixeles. a=0x3F = vacío. */
+static void s_6EE1(uint8_t a, uint8_t plane, int x, int y)
+{
+    uint16_t coltab = (uint16_t)(rom_rb_p(0x7CF0u) |
+                                 ((uint16_t)rom_rb_p(0x7CF1u) << 8));
+    uint16_t attr = (uint16_t)(0x1B00u + plane * 4u);
+    uint8_t col = rom_rb_p((uint16_t)(coltab + a));
+    if (col == 8u) {
+        uint8_t t = rr(0xE343u);
+        if (t) {
+            uint8_t blink = (t < 3u) ? (uint8_t)(rr(0xEAC9u) & 1u)
+                                     : (uint8_t)(rr(0xEAC9u) & 4u);
+            if (blink) col = 0x0Fu;
+        } else if ((t = rr(0xE344u)) != 0u) {
+            uint8_t blink = (t < 3u) ? (uint8_t)(rr(0xEAC9u) & 1u)
+                                     : (uint8_t)(rr(0xEAC9u) & 4u);
+            if (blink) col = 0x02u;
+        }
+    }
+    hal_vdp_write_vram(attr,                 (uint8_t)y);
+    hal_vdp_write_vram((uint16_t)(attr + 1), (uint8_t)x);
+    hal_vdp_write_vram((uint16_t)(attr + 2), (uint8_t)(a * 4u));
+    hal_vdp_write_vram((uint16_t)(attr + 3), col);
+}
+
+/* sub_5D63: el PUFF de desintegración en la celda (h,l): SFX (0xEAF6=0x32)
+ * + 3 frames BLOQUEANTES (sub_5128) con los patrones 0x2C-0x2E en el plano
+ * de sprite 12 (posición vía sub_6F4D), y lo esconde (patrón 0x3F).
+ * En los harness (sin SDL/actores) no se consumen frames: solo la lógica. */
+static void s_5D63(uint8_t h, uint8_t l)
+{
+    int x = ((int)h + 1) * 8;            /* sub_6F4D */
+    int y = ((int)l + 4) * 8 - 1;
+    uint8_t a;
+    wr(0xEAF6u, 0x32u);
+    for (a = 0x2Cu; a < 0x2Fu; a++) {
+        s_6EE1(a, 0x0Cu, x, y);
+        if (g_actors_on) {
+            hal_wait_game_frame(player_frame_ms());
+            hal_poll_events();
+        }
+    }
+    s_6EE1(0x3Fu, 0x0Cu, 0, 0);
+}
+
+/* sub_5D47: mata el objeto (entry): slot[0]=0, blanquea su 2x2 y dispara
+ * el puff (sub_5D63: SFX + sprite). */
 static void s_5D47(uint16_t ix)
 {
     uint8_t h = rr((uint16_t)(ix + 2u)), l = rr((uint16_t)(ix + 3u));
@@ -435,7 +484,7 @@ static void s_5D47(uint16_t ix)
     rl_cell_put((uint8_t)(h + 1u), l, 0u, 0u, 0u);
     rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0u, 0u, 0u);
     rl_cell_put(h, (uint8_t)(l + 1u), 0u, 0u, 0u);
-    wr(0xEAF6u, 0x32u);
+    s_5D63(h, l);
 }
 
 /* sub_42F5: si hay un BAT en (b,c) lo aplasta */
@@ -456,7 +505,8 @@ static void s_710B(uint16_t ix, uint8_t slot)
     uint8_t f = rr((uint16_t)(ix + 4u));
     uint8_t e = slot;
     if (code == 0x34u) {
-        /* sub_61F5: trampa (particulas) - Fase 4 */
+        /* sub_61F5: la 0x34 empujada dispara los pistones 0x1B */
+        s_61F5(f, h, l);
     }
     if (rr(0xEAC9u) & 0x01u) {
         /* IMPAR: paso final */
@@ -884,7 +934,7 @@ static void s_719D(uint16_t ix, uint8_t slot)
                 rl_cell_put((uint8_t)(h + 1u), l, 0u, 0u, slot);
                 rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0u, 0u, slot);
                 rl_cell_put(h, (uint8_t)(l + 1u), 0u, 0u, slot);
-                wr(0xEAF6u, 0x32u);                   /* puff (sub_5D63) */
+                s_5D63(h, l);                         /* puff (7236) */
                 return;
             }
             wr((uint16_t)(ix + 3u), (uint8_t)(l + 1u));
@@ -902,7 +952,7 @@ static void s_719D(uint16_t ix, uint8_t slot)
                 rl_cell_put((uint8_t)(h + 1u), l, 0u, 0u, slot);
                 rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0u, 0u, slot);
                 rl_cell_put(h, (uint8_t)(l + 1u), 0u, 0u, slot);
-                wr(0xEAF6u, 0x32u);
+                s_5D63(h, (uint8_t)(l - 2u));         /* puff 2 filas arriba (7257) */
                 return;
             }
             l--;
@@ -1258,6 +1308,149 @@ void player_traps_frame(void)
                       rr((uint16_t)(hl + 2u))));
     for (s = 0u, hl = 0xE43Eu; s < 16u; s++, hl += 5u)
         if (rr(hl) == 0x1Fu) s_7494(hl);
+}
+
+/* ==========================================================================
+ * PISTÓN VERTICAL 0x1B (e43e) — nace INERTE (estado 0); lo dispara la
+ * trampa COLL 0x34 al ser EMPUJADA (sub_61F5 desde el movedor 710B):
+ * empuje a la IZQUIERDA (flags=1) = SUBIR (A=0x0C), a la DERECHA (flags=3)
+ * = BAJAR (A=4); solo dispara mientras la 0x34 tenga una celda-marcador
+ * encima (rampa falsa: colmap bit0 + E6EE bit4) o en frames impares.
+ * Geometría: 2 columnas, CABEZA (1 fila, deltas 3/4 asentada) + hueco de
+ * 3 filas + PIE (deltas 5/6) en fila+4. Frame PAR: cerebro sub_474E +
+ * mover (2x2 deltas 7-10 cabeza y 11-14 pie); frame IMPAR: asienta y
+ * LIMPIA el estado (sin re-disparo queda quieto).
+ * ========================================================================== */
+
+/* sub_47A1: si hay objeto (COLL/BAT) en (b,c) y NO está cayendo (flags
+ * bit2 apagado) → 0 = esperar (el caller no baja todavía). */
+static uint8_t s_47A1(uint8_t b, uint8_t c)
+{
+    uint16_t ix;
+    if (!s_468A(0x06u, b, c, &ix, 0)) return 1u;
+    return (rr((uint16_t)(ix + 4u)) & 0x04u) ? 1u : 0u;
+}
+
+/* sub_474E: cerebro del pistón. a = 4 (bajar) / 0x0C (subir), (b,c) =
+ * esquina izquierda de la CABEZA. Devuelve el estado (bit2 apagado = no
+ * se mueve este paso). */
+static uint8_t s_474E(uint8_t a, uint8_t b, uint8_t c)
+{
+    uint8_t h = a;
+    if (h & 0x08u) {                                       /* SUBIR */
+        if (p_4515(b, (uint8_t)(c - 1u)))   return (uint8_t)(h & ~0x04u);
+        if (p_4541(b, (uint8_t)(c + 3u)))   return (uint8_t)(h & ~0x04u);
+        s_4744(b, (uint8_t)(c + 3u));       /* carga lo apoyado en el pie */
+        s_4744((uint8_t)(b + 1u), (uint8_t)(c + 3u));
+        return h;
+    }
+    /* BAJAR */
+    if (p_4541(b, (uint8_t)(c + 1u)))       return (uint8_t)(h & ~0x04u);
+    if (!s_47A1(b, (uint8_t)(c + 1u)))      h &= (uint8_t)~0x04u;
+    if (!s_47A1((uint8_t)(b + 1u), (uint8_t)(c + 1u))) h &= (uint8_t)~0x04u;
+    if (p_4566(0u, b, (uint8_t)(c + 5u)))   h &= (uint8_t)~0x04u;
+    return h;
+}
+
+/* sub_735F: un paso del pistón (ix = entrada e43e, a = 4/0x0C).
+ * Frame PAR: cerebro + mover; IMPAR: asentar + estado:=0. */
+static void s_735F(uint16_t ix, uint8_t a)
+{
+    uint8_t h = rr((uint16_t)(ix + 1u)), l = rr((uint16_t)(ix + 2u));
+    uint8_t st;
+    if ((rr(0xEAC9u) & 0x01u) == 0u) {                     /* PAR: mover */
+        st = s_474E(a, h, l);
+        wr((uint16_t)(ix + 4u), st);
+        if (!(st & 0x04u)) return;
+        if (st & 0x08u) { l--; wr((uint16_t)(ix + 2u), l); }       /* sube */
+        else            { wr((uint16_t)(ix + 2u), (uint8_t)(l + 1u)); } /* baja */
+        /* 738B: 2x2 deltas 7-10 (cabeza) + 2x2 deltas 11-14 (pie) */
+        rl_cell_put(h, l, 0x1Bu, 7u, 0u);
+        rl_cell_put((uint8_t)(h + 1u), l, 0x1Bu, 8u, 0u);
+        rl_cell_put(h, (uint8_t)(l + 1u), 0x1Bu, 9u, 0u);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0x1Bu, 10u, 0u);
+        rl_cell_put(h, (uint8_t)(l + 4u), 0x1Bu, 11u, 0u);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 4u), 0x1Bu, 12u, 0u);
+        rl_cell_put(h, (uint8_t)(l + 5u), 0x1Bu, 13u, 0u);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 5u), 0x1Bu, 14u, 0u);
+        return;
+    }
+    st = rr((uint16_t)(ix + 4u));                          /* IMPAR: asentar */
+    if (st & 0x04u) {
+        if (st & 0x08u) {                                  /* venía subiendo */
+            rl_cell_put(h, l, 0x1Bu, 3u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), l, 0x1Bu, 4u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0u, 0u, 0u);
+            rl_cell_put(h, (uint8_t)(l + 1u), 0u, 0u, 0u);
+            rl_cell_put(h, (uint8_t)(l + 4u), 0x1Bu, 5u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 4u), 0x1Bu, 6u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 5u), 0u, 0u, 0u);
+            rl_cell_put(h, (uint8_t)(l + 5u), 0u, 0u, 0u);
+        } else {                                           /* venía bajando */
+            rl_cell_put(h, (uint8_t)(l - 1u), 0x1Bu, 2u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l - 1u), 0x1Bu, 2u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), l, 0x1Bu, 4u, 0u);
+            rl_cell_put(h, l, 0x1Bu, 3u, 0u);
+            rl_cell_put(h, (uint8_t)(l + 3u), 0u, 0u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 3u), 0u, 0u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 4u), 0x1Bu, 6u, 0u);
+            rl_cell_put(h, (uint8_t)(l + 4u), 0x1Bu, 5u, 0u);
+        }
+    }
+    wr((uint16_t)(ix + 4u), 0u);                           /* 73F0 */
+}
+
+/* sub_61F5: handler de la trampa 0x34 (desde el movedor 710B, cada frame).
+ * flags bit0 = la están empujando; bit1 = hacia la derecha. En frames
+ * PARES exige el marcador (rampa falsa E6EE bit4) sobre la trampa. */
+static void s_61F5(uint8_t flags, uint8_t b, uint8_t c)
+{
+    uint8_t trig;
+    uint16_t hl;
+    uint8_t s;
+    if (!(flags & 0x01u)) return;
+    if ((rr(0xEAC9u) & 0x01u) == 0u) {
+        if (!(p_4A38(b, (uint8_t)(c - 1u)) & 0x10u) &&
+            !(p_4A38((uint8_t)(b + 1u), (uint8_t)(c - 1u)) & 0x10u))
+            return;
+    }
+    trig = (flags & 0x02u) ? 0x04u : 0x0Cu;   /* der=bajar, izq=subir */
+    for (s = 0u, hl = 0xE43Eu; s < 16u; s++, hl += 5u)
+        if (rr(hl) == 0x1Bu) s_735F(hl, trig);
+}
+
+/* ==========================================================================
+ * sub_623C (cola del game loop, en 40B6): timer del sprite de partícula
+ * (0xEAF9, plano 13; al expirar lo esconde) y cada 16 frames los TIMERS
+ * de power-up E343/E344 (sub_6265): por debajo de 6 la música avisa
+ * (transpose +5, tempo_speed 0xFF) y al llegar a 0 vuelve el tema normal
+ * (sub_6281: 0x78D2/0x7916).
+ * ========================================================================== */
+void player_tail_frame(void)
+{
+    uint8_t a = rr(0xEAF9u);
+    uint16_t t;
+    if (a) {
+        a--;
+        wr(0xEAF9u, a);
+        if (a == 0u) s_6EE1(0x3Fu, 0x0Du, 0, 0);
+    }
+    if (rr(0xEAC9u) & 0x0Fu) return;
+    for (t = 0xE343u; t <= 0xE344u; t++) {
+        a = rr(t);
+        if (!a) continue;
+        a--;
+        wr(t, a);
+        if (a >= 6u) continue;
+        if (a) {
+            wr(0xEAF2u, 5u);
+            wr(0xEAF4u, 0xFFu);
+        } else {
+            wr(0xEAF2u, 0u);
+            wr(0xEAF4u, 0u);
+            music_load(0x78D2u, 0x7916u);   /* sub_6281 */
+        }
+    }
 }
 
 /* ==========================================================================

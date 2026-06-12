@@ -349,6 +349,7 @@ void faithful_play(uint8_t start_room)
         keys_update(g_plr_px, g_plr_py, 16, 16);
         items_update(g_plr_px, g_plr_py, 16, 16);
         player_end_frame();    /* 40AF: cierre del frame (paridad compartida) */
+        player_tail_frame();   /* sub_623C: partícula + timers de power-up */
 
         /* 0x62FA + sub_5128: velocidad real. El juego pacea el loop con un
          * busy-wait de EACA iteraciones de sub_50E8 (player_frame_ms =
@@ -578,16 +579,32 @@ int main(int argc, char *argv[])
             const char *rs = getenv("CASTLE_ROOM");
             const char *nf = getenv("CASTLE_FRAMES");
             const char *pc = getenv("CASTLE_PCOL"), *pr = getenv("CASTLE_PROW");
+            /* CASTLE_HOLD=R|L (+CASTLE_HOLDFROM=N): el jugador NO va fijado;
+             * desde el frame N mantiene la dirección (para escenarios de
+             * EMPUJE: la trampa 0x34 dispara los pistones 0x1B). */
+            const char *hold = getenv("CASTLE_HOLD");
+            int holdfrom = getenv("CASTLE_HOLDFROM")
+                         ? atoi(getenv("CASTLE_HOLDFROM")) : 0;
             FILE *f = fopen(et, "w");
             if (rs) room = (uint8_t)strtol(rs, NULL, 16);
             if (nf) nframes = atoi(nf);
             if (!f) { free(rom_buf); return 1; }
             g_rom = rom_buf; g_rom_size = rom_size;
             rl_reset();
+            if (hold) {     /* punto de entrada: el loader respawnea de E322/23 */
+                if (pc) rl_ram_wb(0xE322u, (uint8_t)atoi(pc));
+                if (pr) rl_ram_wb(0xE323u, (uint8_t)atoi(pr));
+            }
             rl_load_room(room);
+            if (hold) player_sync_pixel();
             for (int i = 0; i < nframes; i++) {
-                if (pc) rl_ram_wb(0xE334u, (uint8_t)atoi(pc));
-                if (pr) rl_ram_wb(0xE335u, (uint8_t)atoi(pr));
+                if (hold) {
+                    rl_ram_wb(0xEAE0u, 0u);
+                    rl_ram_wb(0xE343u, 1u);
+                } else {
+                    if (pc) rl_ram_wb(0xE334u, (uint8_t)atoi(pc));
+                    if (pr) rl_ram_wb(0xE335u, (uint8_t)atoi(pr));
+                }
                 fprintf(f, "%d", i);
                 for (int s = 0; s < 16; s++) {
                     uint16_t ix = (uint16_t)(0xE43Eu + s * 5u);
@@ -603,9 +620,15 @@ int main(int argc, char *argv[])
                 fprintf(f, "\n");
                 player_elev_frame();
                 player_coll_frame();
+                if (hold) {
+                    uint8_t stick = (i >= holdfrom)
+                                  ? ((hold[0] == 'L') ? 7u : 3u) : 0u;
+                    player_frame(stick, 0u);
+                }
                 player_traps_frame();
                 player_bats_frame();
                 player_end_frame();
+                player_tail_frame();
             }
             fclose(f);
             printf("CASTLE_E43TRACE: sala 0x%02X, %d frames -> %s\n", room, nframes, et);
