@@ -316,6 +316,7 @@ void faithful_play(uint8_t start_room)
      * (sub_5A63), puertas (sub_4325/758C), transiciones (sub_5053).
      * Maqueta restante: pickup AABB (efectos reales = Fase 5). */
     while (hal_poll_events()) {
+        player_elev_frame();   /* sub_442D: ascensores PRIMERO */
         player_coll_frame();   /* sub_434A: bloques ANTES del jugador */
         player_frame(hal_joystick_read(0), hal_key_pressed() ? 1u : 0u);
         {
@@ -548,6 +549,7 @@ int main(int argc, char *argv[])
                                     rl_ram_rb((uint16_t)(0xE496u + c * 30 + b)));
                 }
                 fprintf(f, "\n");
+                player_elev_frame();
                 player_coll_frame();
                 player_bats_frame();
                 player_end_frame();
@@ -654,6 +656,7 @@ int main(int argc, char *argv[])
                 for (int f = 0; f < nframes; f++) {
                     uint8_t stick = 0u, trig = 0u;
                     char m = (mv && f < (int)strlen(mv)) ? mv[f] : '.';
+                    player_elev_frame();
                     player_coll_frame();
                     switch (m) {
                         case 'R': stick = 3u; break;

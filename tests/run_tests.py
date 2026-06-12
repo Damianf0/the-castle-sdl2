@@ -194,10 +194,10 @@ def run(results):
     # corre cada sala con el jugador fijado en la celda de la captura y debe
     # reproducir frame a frame las posiciones de los 8 slots BAT (incluye la
     # interacción con los objetos COLL: trampas 0x35 que caen, etc.).
-    # Salas cuyo ciclo BAT depende del motor de ASCENSORES (e43e código 0x1D,
-    # sub_4406/442D — aún no portado): la plataforma móvil escribe bits de piso
-    # en el colmap y extiende las patrullas. Se saltan hasta portarlo.
-    BATS_PENDING = {'29', '81'}
+    # Salas con motor de ASCENSORES (e43e 0x1C/0x1D, sub_442D — portado):
+    # la plataforma móvil escribe piso en el colmap y extiende las patrullas;
+    # 29 y 81 lo validan junto con los BATs.
+    BATS_PENDING = set()
     def t_bats():
         import glob as _g
         errs = []

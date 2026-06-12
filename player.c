@@ -942,6 +942,201 @@ void player_bats_frame(void)
 }
 
 /* ==========================================================================
+ * MOTOR DE ASCENSORES (e43e tipos 0x1C ancho 2 / 0x1D ancho 4) — sub_442D.
+ * Cada 8 frames (EAC9&7==0): cerebro sub_4611 (probes con rebote) y drawer
+ * sub_73FB/743D (mueve la fila de la ENTRADA e43e y redibuja; el colmap por
+ * delta sale del ROM vía 5E80: superficie deltas 0/1/2 = piso, cadena no).
+ * Bajando APLASTA objetos (sub_5D47); subiendo EMPUJA la pila de bloques y
+ * al jugador (sub_4701/4744/7575, recursivo) y aplasta contra el techo.
+ * Pendiente del driver 442D: tipos 0x0C/0x0D/0x0F (sub_72CA/72DD/7326).
+ * ========================================================================== */
+
+/* sub_452D: ¿bajada bloqueada? piso (0x40) en (b,c) o (b+1,c) */
+static uint8_t p_452D(uint8_t b, uint8_t c)
+{
+    if (c >= 0x14u) return 1u;
+    if (cm(b, c) & 0x40u) return 1u;
+    return (cm((uint8_t)(b + 1u), c) & 0x40u) ? 1u : 0u;
+}
+
+/* sub_4541: ¿subida bloqueada? sólido (0x30) SIN objeto (bit3, será
+ * empujado) en (b,c) o (b+1,c) */
+static uint8_t p_4541(uint8_t b, uint8_t c)
+{
+    uint8_t i, v;
+    if (c >= 0x14u) return 1u;
+    for (i = 0u; i < 2u; i++) {
+        v = cm((uint8_t)(b + i), c);
+        if (!(v & 0x08u) && (v & 0x30u)) return 1u;
+    }
+    return 0u;
+}
+
+/* sub_468A completo (con bit0 = jugador): 0=nada, 1=jugador (sus pies
+ * están en la fila c: top-left == (b,c-1) o (b-1,c-1)), 2=objeto */
+static uint8_t s_468A_pl(uint8_t mode, uint8_t b, uint8_t c,
+                         uint16_t *ix, uint8_t *slot)
+{
+    if (b >= 0x1Eu || c >= 0x14u) return 0u;
+    if (mode & 0x01u) {
+        uint8_t pc = rr(0xE334u), pr = rr(0xE335u);
+        if (pr == (uint8_t)(c - 1u) &&
+            (pc == b || pc == (uint8_t)(b - 1u))) return 1u;
+    }
+    return s_468A((uint8_t)(mode & 0x06u), b, c, ix, slot) ? 2u : 0u;
+}
+
+static void s_4744(uint8_t b, uint8_t c);
+
+/* sub_4701 (rama objeto): empujar el 2x2 una fila arriba. Techo sólido →
+ * APLASTADO (5D47). Antes empuja lo que tenga encima (recursivo) y al
+ * final lo redibuja una fila arriba (sub_7575: 2x2 + blanqueo abajo). */
+static void s_4701_obj(uint16_t ix, uint8_t slot)
+{
+    uint8_t b = rr((uint16_t)(ix + 2u));
+    uint8_t c = (uint8_t)(rr((uint16_t)(ix + 3u)) - 1u);
+    if (p_4541(b, c)) { s_5D47(ix); return; }
+    s_4744(b, c);
+    s_4744((uint8_t)(b + 1u), c);
+    {   /* sub_7575 */
+        uint8_t code = rr((uint16_t)(ix + 1u));
+        uint8_t h = rr((uint16_t)(ix + 2u));
+        uint8_t l = (uint8_t)(rr((uint16_t)(ix + 3u)) - 1u);
+        wr((uint16_t)(ix + 3u), l);
+        rl_cell_put(h, l, code, 0u, slot);
+        rl_cell_put((uint8_t)(h + 1u), l, code, 1u, slot);
+        rl_cell_put(h, (uint8_t)(l + 1u), code, 2u, slot);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, 3u, slot);
+        rl_cell_put(h, (uint8_t)(l + 2u), 0u, 0u, 0u);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 2u), 0u, 0u, 0u);
+    }
+}
+
+/* sub_4701 (rama jugador): fila--, sync de pixel y redibujo del sprite
+ * (6F27 con A=0xFF = misma animación, posición nueva) */
+static void s_4701_player(void)
+{
+    wr(0xE335u, (uint8_t)(rr(0xE335u) - 1u));
+    s_6F45_pixel();
+    s_6F27((uint8_t)g_plr_frame);
+}
+
+/* sub_4744: si hay ocupante en (b,c), empujarlo una fila arriba */
+static void s_4744(uint8_t b, uint8_t c)
+{
+    uint16_t ix;
+    uint8_t slot;
+    uint8_t occ = s_468A_pl(7u, b, c, &ix, &slot);
+    if (occ == 1u) s_4701_player();
+    else if (occ == 2u) s_4701_obj(ix, slot);
+}
+
+/* sub_4611: cerebro del ascensor. a = estado (bit3 = subiendo), (b,c) =
+ * esquina izquierda de la plataforma, d = ancho en pares de celdas.
+ * Devuelve el estado nuevo (el rebote re-entra en el sentido contrario,
+ * como los JR del original). */
+static uint8_t s_4611(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
+{
+    uint8_t i, w = (uint8_t)(d * 2u);
+    if (a & 0x08u) goto up;
+down:
+    for (i = 0u; i < d; i++)
+        if (p_452D((uint8_t)(b + i * 2u), (uint8_t)(c + 1u))) {
+            a |= 0x08u;                       /* 4643: SET 3 y probar subir */
+            goto up;
+        }
+    for (i = 0u; i < w; i++) {                /* aplastar objetos debajo */
+        uint16_t ix;
+        if (s_468A_pl(6u, (uint8_t)(b + i), (uint8_t)(c + 1u), &ix, 0) == 2u)
+            s_5D47(ix);
+    }
+    return a;
+up:
+    for (i = 0u; i < d; i++)
+        if (p_4541((uint8_t)(b + i * 2u), (uint8_t)(c - 1u))) {
+            a &= (uint8_t)~0x08u;             /* 467B: RES 3 y probar bajar */
+            goto down;
+        }
+    for (i = 0u; i < w; i++) {                /* cargar la pila de arriba */
+        for (;;) {
+            uint16_t ix;
+            uint8_t slot;
+            uint8_t occ = s_468A_pl(7u, (uint8_t)(b + i),
+                                    (uint8_t)(c - 1u), &ix, &slot);
+            if (occ == 0u) break;
+            if (occ == 1u) { s_4701_player(); continue; }   /* re-probar */
+            s_4701_obj(ix, slot);
+            break;
+        }
+    }
+    return a;
+}
+
+/* sub_73FB (0x1C) / sub_743D (0x1D): el drawer mueve la fila de la entrada
+ * y redibuja. bit2 del estado = activo. Superficie: deltas 0,1[,1],2;
+ * colgante en la fila de abajo al subir: 2,3 (0x1C) / _,3,4,_ (0x1D). */
+static void s_elev_draw(uint16_t ix, uint8_t t)
+{
+    uint8_t h = rr((uint16_t)(ix + 1u)), l = rr((uint16_t)(ix + 2u));
+    uint8_t st = rr((uint16_t)(ix + 4u));
+    if (!(st & 0x04u)) return;
+    if (t == 0x1Cu) {
+        if (st & 0x08u) {                                      /* sube */
+            l--; wr((uint16_t)(ix + 2u), l);
+            rl_cell_put(h, l, 0x1Cu, 0u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), l, 0x1Cu, 1u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0x1Cu, 3u, 0u);
+            rl_cell_put(h, (uint8_t)(l + 1u), 0x1Cu, 2u, 0u);
+        } else {                                               /* baja */
+            wr((uint16_t)(ix + 2u), (uint8_t)(l + 1u));
+            rl_cell_put(h, l, 0u, 0u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), l, 0u, 0u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0x1Cu, 1u, 0u);
+            rl_cell_put(h, (uint8_t)(l + 1u), 0x1Cu, 0u, 0u);
+        }
+        return;
+    }
+    if (st & 0x08u) {                                          /* 0x1D sube */
+        l--; wr((uint16_t)(ix + 2u), l);
+        rl_cell_put(h, l, 0x1Du, 0u, 0u);
+        rl_cell_put((uint8_t)(h + 1u), l, 0x1Du, 1u, 0u);
+        rl_cell_put((uint8_t)(h + 2u), l, 0x1Du, 1u, 0u);
+        rl_cell_put((uint8_t)(h + 3u), l, 0x1Du, 2u, 0u);
+        rl_cell_put((uint8_t)(h + 3u), (uint8_t)(l + 1u), 0u, 0u, 0u);
+        rl_cell_put((uint8_t)(h + 2u), (uint8_t)(l + 1u), 0x1Du, 4u, 0u);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0x1Du, 3u, 0u);
+        rl_cell_put(h, (uint8_t)(l + 1u), 0u, 0u, 0u);
+    } else {                                                   /* baja */
+        wr((uint16_t)(ix + 2u), (uint8_t)(l + 1u));
+        rl_cell_put(h, l, 0u, 0u, 0u);
+        rl_cell_put((uint8_t)(h + 1u), l, 0u, 0u, 0u);
+        rl_cell_put((uint8_t)(h + 2u), l, 0u, 0u, 0u);
+        rl_cell_put((uint8_t)(h + 3u), l, 0u, 0u, 0u);
+        rl_cell_put((uint8_t)(h + 3u), (uint8_t)(l + 1u), 0x1Du, 2u, 0u);
+        rl_cell_put((uint8_t)(h + 2u), (uint8_t)(l + 1u), 0x1Du, 1u, 0u);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0x1Du, 1u, 0u);
+        rl_cell_put(h, (uint8_t)(l + 1u), 0x1Du, 0u, 0u);
+    }
+}
+
+/* sub_442D: driver de la tabla e43e (16 slots de 5 bytes). Los ascensores
+ * solo actúan cada 8 frames (EAC9&7==0). */
+void player_elev_frame(void)
+{
+    uint16_t hl = 0xE43Eu;
+    uint8_t s;
+    for (s = 0u; s < 16u; s++, hl += 5u) {
+        uint8_t t = rr(hl);
+        if (t != 0x1Cu && t != 0x1Du) continue;
+        if (rr(0xEAC9u) & 0x07u) continue;
+        wr((uint16_t)(hl + 4u),
+           s_4611(rr((uint16_t)(hl + 4u)), rr((uint16_t)(hl + 1u)),
+                  rr((uint16_t)(hl + 2u)), (t == 0x1Cu) ? 1u : 2u));
+        s_elev_draw(hl, t);
+    }
+}
+
+/* ==========================================================================
  * DANIO POR CONTACTO + MUERTE (sub_5A2D / sub_5AF8 / sub_5A63)
  * ========================================================================== */
 /* sub_5AF8: peligro en (b,c)? celda con bit 0x10 y sin 0x80; flags del byte

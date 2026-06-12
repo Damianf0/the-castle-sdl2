@@ -168,14 +168,29 @@ handlers 0x5C3A+) en vez del AABB maqueta; 0x62D8/0x623C (render/triggers).
 daño/muerte en player.c; suite `bats` del harness compara CASTLE_BATTRACE
 (+CASTLE_PCOL/PROW) frame a frame contra fixtures frescos de openMSX
 (tests/fixtures/bats/, 10 salas vía tools/gen_bats_fixtures.py +
-tools/tr_bats.tcl): 8/8 exactas 301/301; salas 29/81 en BATS_PENDING hasta
-portar los ASCENSORES (e43e 0x1D escribe piso en el colmap y extiende las
-patrullas 0x39/0x38). El criterio original (enemies_paths.c) se descartó:
+tools/tr_bats.tcl): **10/10 exactas 301/301** (29/81 incluidas con los
+ascensores). El criterio original (enemies_paths.c) se descartó:
 la sala 49 probó que el path legacy era un artefacto (la trampa 0x35 cae al
 cargar y el BAT real rebota contra ella); enemies_paths.c y enemies_port.c
 BORRADOS. Bug real cazado: sub_4901 solo sube si el jugador está ARRIBA
-(JP Z/JP C en 49A2 → horizontal). Pendiente de la fase: ascensores
-(sub_4406/442D), partículas sub_61F5/5D63, escaleras, pickup por celda.
+(JP Z/JP C en 49A2 → horizontal).
+
+**Motor de ASCENSORES ✅ portado y validado (2026-06-12)** — sub_442D en
+player.c (player_elev_frame, ANTES de 434A en el loop): e43e tipos 0x1C
+(ancho 2) / 0x1D (ancho 4), actúan cada 8 frames (EAC9&7==0). Entrada:
+[1]=col, [2]=fila (la mueve el DRAWER 73FB/743D), [4]=estado (bit2=activo,
+bit3=subiendo). Cerebro sub_4611: probes sub_452D (bajar: piso 0x40
+bloquea) / sub_4541 (subir: sólido 0x30 sin bit3-objeto bloquea) con
+rebote; bajando APLASTA objetos (468A modo 6 → 5D47); subiendo EMPUJA la
+pila (468A modo 7 con bit0=JUGADOR: pies en fila c ⇔ top-left==(b,c-1) o
+(b-1,c-1); sub_4701: jugador = E335--+6F45+6F27(0xFF), objeto = sub_4744
+recursivo encima + sub_7575 redibuja 2x2 una fila arriba; techo → 5D47).
+El colmap por delta sale del ROM vía 5E80 (0x1B-0x1E: tabla 0x77B6):
+superficie=piso, cadenas no. Salas 29/81 frame-exactas 301/301.
+
+Pendiente de la fase: partículas sub_61F5/5D63, escaleras, pickup por
+celda, tipos 0x0C/0x0D/0x0F de 442D (sub_72CA/72DD/7326) y 0x1F de
+sub_4406 (sub_47B8/7494, trampas estructurales).
 
 Mapa original (referencia):
 - Driver `sub_438D`: tabla 0xE416 (8 slots). Pasada 1: cerebro `sub_43BF`

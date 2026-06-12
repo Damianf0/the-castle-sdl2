@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-06-12 — Fase 4: motor de ASCENSORES (e43e 0x1C/0x1D) — 10/10 salas BAT
+
+- **sub_442D portado** (player_elev_frame en player.c, primero en el game
+  loop como el original): plataformas móviles de 2 (0x1C) y 4 (0x1D)
+  celdas que suben/bajan cada 8 frames escribiendo su piso en el colmap
+  (colmap por delta del ROM vía 5E80: superficie=piso 0x40, cadenas no).
+- **Cerebro sub_4611**: rebote por probes asimétricos (bajar lo frena el
+  piso 0x40; subir lo frena el sólido 0x30 — un objeto bit3 no bloquea:
+  se empuja). Bajando aplasta objetos (sub_5D47); subiendo CARGA al
+  jugador (sub_4701: fila--, sync de sprite) y empuja pilas de bloques
+  recursivamente (sub_4744/7575), aplastándolas contra el techo.
+- Validación: salas 29 y 81 frame-exactas 301/301 contra los fixtures
+  openMSX existentes → BATS_PENDING vacío, **10/10 salas BAT exactas**.
+  (La traza valida el ascensor indirectamente: las patrullas 0x38/0x39
+  solo se extienden si el piso móvil aparece en el frame justo.)
+- Pendiente de 442D: tipos 0x0C/0x0D/0x0F (sub_72CA/72DD/7326) y el 0x1F
+  de sub_4406 (sub_47B8/7494).
+- Infra: `_buildtools` había sido borrado del disco — repuesto con
+  winlibs gcc 16.1, SDL2-devel 2.32.10 y openMSX 21.0 (mismo layout).
+
 ## 2026-06-12 — Velocidad real del juego: lenta + CTRL=correr (0x62FA)
 
 Reportado por el usuario: el juego real tiene una velocidad general más
