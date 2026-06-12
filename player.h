@@ -28,6 +28,10 @@ void player_end_frame(void);
  * escribe también transpose (0xEAF1) y tempo (0xEAF3) de la música. */
 void player_speed_frame(uint8_t row6);
 
+/* Duración real de una iteración del game loop según 0xEACA (sub_5128,
+ * medida en openMSX con tools/tr_speed.tcl): para hal_wait_game_frame(). */
+double player_frame_ms(void);
+
 /* Devuelve y CONSUME el borde de salida (0xEAE1): 0=no, 1=arriba, 3=der,
  * 5=abajo, 7=izq. */
 uint8_t player_take_exit(void);

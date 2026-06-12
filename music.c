@@ -58,6 +58,14 @@
 
 #include "hal.h"
 #include "game.h"
+#include "room_loader.h"
+
+/* El estado del reproductor vive en la RAM espejo (como el ISR real, que
+ * lee 0xEAF1-0xEAF8 directamente): así los motores del juego que escriben
+ * esas celdas (velocidad 62FA → EAF1/EAF3, puff 5D47 → EAF6, power-ups)
+ * afectan la música sin cableado extra. */
+#define MR(a)     rl_ram_rb((uint16_t)(a))
+#define MW(a, v)  rl_ram_wb((uint16_t)(a), (uint8_t)(v))
 
 /* ==========================================================================
  * TABLA DE PERÍODOS (de la ROM en 0x7812, extraída directamente)
@@ -95,15 +103,8 @@ typedef struct {
 
 static MusicChannel g_ch[2];       /* canal A (IX=0xEAE9) y B (IX=0xEAED) */
 
-static uint8_t g_tempo_period;     /* 0xEAF3 */
-static uint8_t g_tempo_speed;      /* 0xEAF4 */
-static uint8_t g_tick_phase;       /* 0xEAF5 */
-
-static uint8_t g_transpose_fine;   /* 0xEAF1 */
-static uint8_t g_transpose_coarse; /* 0xEAF2 */
-
-/* SFX volumes (0xEAF6..0xEAF8) */
-static uint8_t g_sfx_vol[3];
+/* En RAM espejo: tempo_period=0xEAF3, tempo_speed=0xEAF4, tick_phase=0xEAF5,
+ * transpose fine/coarse=0xEAF1/0xEAF2, SFX vol=0xEAF6..0xEAF8. */
 
 static bool g_active = false;
 
@@ -195,8 +196,8 @@ static void play_note(uint8_t note_idx, uint8_t psg_base)
 
     /* Aplicar transposición: nota + fine + coarse */
     uint16_t transposed = (uint16_t)note_idx
-                        + (uint16_t)g_transpose_fine
-                        + (uint16_t)g_transpose_coarse;
+                        + (uint16_t)MR(0xEAF1u)
+                        + (uint16_t)MR(0xEAF2u);
 
     /* Limitar al rango de la tabla (0..95) */
     uint8_t idx = (uint8_t)(transposed % 96u);
@@ -263,28 +264,29 @@ static void play_note(uint8_t note_idx, uint8_t psg_base)
  * ========================================================================== */
 static void update_sfx_volumes(void)
 {
-    /* Decrementar contadores */
+    /* Decrementar contadores (en RAM espejo 0xEAF6..0xEAF8) */
     for (int i = 0; i < 3; i++) {
-        if (g_sfx_vol[i] > 0u) g_sfx_vol[i]--;
+        uint8_t v = MR(0xEAF6u + i);
+        if (v > 0u) MW(0xEAF6u + i, v - 1u);
     }
 
-    if (g_sfx_vol[0] > 0u) {
+    if (MR(0xEAF6u) > 0u) {
         /* SFX tipo 0: noise en canal C, mixer 0x98 */
-        uint8_t v  = g_sfx_vol[0];
+        uint8_t v  = MR(0xEAF6u);
         uint8_t nv = (uint8_t)(3u - (v >> 1u));
         wrtpsg(0x07u, 0x98u);
         wrtpsg(0x06u, nv);
         wrtpsg(0x05u, nv);
         wrtpsg(0x0Au, 0x0Fu);
-    } else if (g_sfx_vol[1] > 0u) {
-        uint8_t v  = g_sfx_vol[1];
+    } else if (MR(0xEAF7u) > 0u) {
+        uint8_t v  = MR(0xEAF7u);
         uint8_t nv = (uint8_t)(3u + (v >> 1u));
         wrtpsg(0x07u, 0xB8u);
         wrtpsg(0x05u, 0x01u);
         wrtpsg(0x04u, nv);
         wrtpsg(0x0Au, 0x0Fu);
-    } else if (g_sfx_vol[2] > 0u) {
-        uint8_t v  = g_sfx_vol[2];
+    } else if (MR(0xEAF8u) > 0u) {
+        uint8_t v  = MR(0xEAF8u);
         uint8_t nv = (uint8_t)(0x1Eu + (v >> 1u));
         wrtpsg(0x07u, 0xB8u);
         wrtpsg(0x05u, 0x00u);
@@ -375,21 +377,22 @@ void music_isr_tick(void)
     update_sfx_volumes();
 
     /* Silencio total si tempo_period == 0 */
-    if (g_tempo_period == 0u) {
+    if (MR(0xEAF3u) == 0u) {
         silence_all();
         return;
     }
 
     /* Avanzar tick_phase */
-    g_tick_phase++;
+    MW(0xEAF5u, MR(0xEAF5u) + 1u);
 
     /* Threshold = tempo_period + tempo_speed (de sub_75E9: ADD A,C donde C=period) */
-    uint8_t threshold = (uint8_t)(g_tempo_period + g_tempo_speed);
-
-    if (g_tick_phase < threshold) return;  /* aún no es momento */
+    {
+        uint8_t threshold = (uint8_t)(MR(0xEAF3u) + MR(0xEAF4u));
+        if (MR(0xEAF5u) < threshold) return;  /* aún no es momento */
+    }
 
     /* Disparar tick musical */
-    g_tick_phase = 0u;
+    MW(0xEAF5u, 0u);
 
     channel_tick(&g_ch[0], 0u);   /* canal A: PSG regs 0,1,8 */
     channel_tick(&g_ch[1], 2u);   /* canal B: PSG regs 2,3,9 */
@@ -424,7 +427,7 @@ void music_load(uint16_t addr_a, uint16_t addr_b)
     g_ch[1].duration   = 0u;
     g_ch[1].tick_count = 0u;
 
-    g_tick_phase = 0u;
+    MW(0xEAF5u, 0u);
 }
 
 /* ==========================================================================
@@ -433,20 +436,20 @@ void music_load(uint16_t addr_a, uint16_t addr_b)
 
 void music_set_tempo(uint8_t period, uint8_t speed)
 {
-    g_tempo_period = period;
-    g_tempo_speed  = speed;
-    g_tick_phase   = 0u;
+    MW(0xEAF3u, period);
+    MW(0xEAF4u, speed);
+    MW(0xEAF5u, 0u);
 }
 
 void music_set_transpose(uint8_t fine, uint8_t coarse)
 {
-    g_transpose_fine   = fine;
-    g_transpose_coarse = coarse;
+    MW(0xEAF1u, fine);
+    MW(0xEAF2u, coarse);
 }
 
 void music_sfx_trigger(uint8_t sfx_id, uint8_t volume)
 {
-    if (sfx_id < 3u) g_sfx_vol[sfx_id] = volume;
+    if (sfx_id < 3u) MW(0xEAF6u + sfx_id, volume);
 }
 
 /* Temas conocidos */
@@ -457,29 +460,46 @@ void music_play_title(void)
     music_set_transpose(0u, 0u);
 }
 
+/* In-game: la música la elige el FINAL del room loader (0x656B-659A) según
+ * los power-ups activos; el tema normal son los MISMOS streams del título
+ * (0x6587: HL=0x78D2, DE=0x7916). El tempo lo fija 62FA cada frame
+ * (EAF3 = 6 normal / 4 corriendo / 2 turbo / 0 mute). */
 void music_play_game(void)
 {
-    music_load(0x7A73u, 0x7A8Fu);
-    music_set_tempo(0x04u, 0x00u);
+    music_load(0x78D2u, 0x7916u);
+    music_set_tempo(0x06u, 0x00u);
     music_set_transpose(0u, 0u);
+}
+
+/* 0x656B-659A (cola de sub_64DD): tema por sala según power-ups + clear
+ * de los SFX (0xEAF6-0xEAF8). Llamar tras cada carga de sala. */
+void music_room_start(void)
+{
+    if (MR(0xE343u))      music_load(0x79B7u, 0x79DEu);  /* power-up rojo  */
+    else if (MR(0xE344u)) music_load(0x7964u, 0x7993u);  /* power-up verde */
+    else                  music_load(0x78D2u, 0x7916u);  /* tema normal    */
+    MW(0xEAF6u, 0u); MW(0xEAF7u, 0u); MW(0xEAF8u, 0u);
+}
+
+/* sub_5B35/5B56 (la usa la secuencia de muerte): jingle 0x7A73/0x7A8F
+ * con tempo 6 (el silencio y los 3 frames previos los hace el caller). */
+void music_play_death(void)
+{
+    music_load(0x7A73u, 0x7A8Fu);
+    MW(0xEAF3u, 6u);
 }
 
 void music_stop(void)
 {
-    g_tempo_period = 0u;
+    MW(0xEAF3u, 0u);
     silence_all();
 }
 
 void music_init(void)
 {
-    memset(&g_ch,     0, sizeof(g_ch));
-    memset(&g_sfx_vol,0, sizeof(g_sfx_vol));
-    g_tempo_period     = 0u;
-    g_tempo_speed      = 0u;
-    g_tick_phase       = 0u;
-    g_transpose_fine   = 0u;
-    g_transpose_coarse = 0u;
-    g_active           = true;
+    memset(&g_ch, 0, sizeof(g_ch));
+    for (uint16_t a = 0xEAF1u; a <= 0xEAF8u; a++) MW(a, 0u);
+    g_active = true;
 
     /* Inicializar PSG igual que BIOS GICINI:
      * R7=0xB8: tone A,B habilitados; noise C habilitado; resto off

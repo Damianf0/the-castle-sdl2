@@ -306,6 +306,7 @@ void faithful_play(uint8_t start_room)
     geom_decode_room(room);
     rl_load_room(room);        /* sala desde el ROM: VRAM + tablas (sub_64DD) */
     player_sync_pixel();       /* sub_6F45 + sub_6F27 (cierre real de sub_64DD) */
+    music_room_start();        /* 0x656B: tema por sala (cola de sub_64DD) */
     keys_room_init(room);
     items_room_init(room);
     g_actors_on = 1;
@@ -327,6 +328,7 @@ void faithful_play(uint8_t start_room)
                 geom_decode_room(room);
                 rl_load_room(room);
                 player_sync_pixel();
+                music_room_start();
                 keys_room_init(room);
                 items_room_init(room);
             }
@@ -339,6 +341,7 @@ void faithful_play(uint8_t start_room)
             geom_decode_room(room);
             rl_load_room(room);                /* respawn en el punto de entrada */
             player_sync_pixel();
+            music_room_start();
             keys_room_init(room);
             items_room_init(room);
         }
@@ -347,11 +350,10 @@ void faithful_play(uint8_t start_room)
         player_end_frame();    /* 40AF: cierre del frame (paridad compartida) */
 
         /* 0x62FA + sub_5128: velocidad real. El juego pacea el loop con un
-         * busy-wait de EACA iteraciones de sub_50E8; medido en openMSX
-         * (tools/tr_speed.tcl): ms/iter = 54.0 + 1.381×EACA →
-         * 0x70=209ms (normal), CTRL 0x30=120ms, CTRL+GRAPH 0x01=55ms. */
+         * busy-wait de EACA iteraciones de sub_50E8 (player_frame_ms =
+         * medición openMSX): 0x70=209ms, CTRL 0x30=120ms, turbo 0x01=55ms. */
         player_speed_frame(hal_msx_keyrow6());
-        hal_wait_game_frame(54.0 + 1.381 * (double)rl_ram_rb(0xEACAu));
+        hal_wait_game_frame(player_frame_ms());
     }
     g_actors_on = 0;
 }

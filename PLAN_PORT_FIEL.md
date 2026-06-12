@@ -261,6 +261,14 @@ Mapa original (referencia):
   0x7A73, CHANGELOG 2026-05-25). Fixture nuevo: dump de escrituras a registros
   PSG por frame en openMSX (intro + in-game) y comparación registro-a-registro
   con `music.c`. Corregir tempo/transpose/ISR hasta igualar.
+- Avance 2026-06-12 (direccionamiento, NO validación): estado del
+  reproductor movido a la RAM espejo (EAF1-EAF8, como el ISR real) — SFX
+  (EAF6+) y tempo por velocidad (62FA) conectados; música in-game real =
+  selección de 0x656B (normal 0x78D2/0x7916 = la del título; power-ups
+  0x79B7/0x79DE y 0x7964/0x7993); muerte = 0x7A73/0x7A8F tempo 6
+  (sub_5B35/5B56). PENDIENTE de validar: envelope del canal A (el port usa
+  shape 0x08 + período calculado, el real escribe R13=0x00 — comparar con
+  dump PSG), volúmenes/mixer de los 3 tipos de SFX, y el tema de fin/demo.
 
 ## Orden razonado
 

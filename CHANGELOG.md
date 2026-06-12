@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-06-12 — Sonido: música de juego CORRECTA, SFX conectados, jingle de muerte
+
+Diagnóstico (el reproductor nunca se validó contra el real — eso sigue
+siendo la Fase 6):
+- La "música de juego" del port cargaba 0x7A73/0x7A8F, que el RE de la
+  muerte (Fase 4) probó que es el JINGLE DE MUERTE: sonaba eso en loop.
+- El motor de SFX (sub_76BE) leía variables estáticas mientras los motores
+  del juego escriben la RAM espejo (0xEAF6 puff de aplastes): mudos.
+- El tempo/transpose por velocidad (62FA → EAF1/EAF3, ayer) tampoco
+  llegaba al reproductor.
+
+Arreglos (todos respaldados por disasm):
+- **El estado del reproductor ahora vive en la RAM espejo** (0xEAF1-EAF8,
+  como el ISR real): SFX, tempo dinámico y mute por CAPS conectados solos.
+- **Música in-game real** (0x656B-659A, cola del room loader): el tema
+  normal son los MISMOS streams del título (0x78D2/0x7916); con power-up
+  rojo (E343) suena 0x79B7/0x79DE y con el verde (E344) 0x7964/0x7993.
+  `music_room_start()` se llama en cada carga de sala.
+- **Muerte fiel** (sub_5B35/5B56): silencio + 3 frames + jingle
+  0x7A73/0x7A8F a tempo 6; la secuencia entera ahora se pacea a velocidad
+  real (player_frame_ms) en vez de 60fps.
+
 ## 2026-06-12 — Fase 4: motor de ASCENSORES (e43e 0x1C/0x1D) — 10/10 salas BAT
 
 - **sub_442D portado** (player_elev_frame en player.c, primero en el game

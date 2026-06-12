@@ -134,6 +134,8 @@ void music_set_transpose(uint8_t fine, uint8_t coarse);
 void music_sfx_trigger(uint8_t sfx_id, uint8_t volume);
 void music_play_title(void);
 void music_play_game(void);
+void music_room_start(void);   /* 0x656B: tema por sala según power-ups */
+void music_play_death(void);   /* sub_5B35/5B56: jingle 0x7A73/0x7A8F */
 void music_stop(void);
 
 /* --- camera.c --- */

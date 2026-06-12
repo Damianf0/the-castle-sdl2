@@ -1186,11 +1186,22 @@ static void death_anim(void)
  * (Musica de muerte 0x7A73/0x7A8F - Fase 6.) */
 void player_death_run(void)
 {
+    /* sub_5B35/5B56: silenciar (EAF3/F4/F2 y SFX = 0), velocidad 0x70,
+     * 3 frames de pausa y cargar el jingle de muerte a tempo 6 */
+    wr(0xEAF3u, 0u); wr(0xEAF4u, 0u); wr(0xEAF2u, 0u);
+    wr(0xEAF6u, 0u); wr(0xEAF7u, 0u);
+    wr(0xEACAu, 0x70u);
+    for (int i = 0; i < 3; i++) {
+        hal_wait_game_frame(player_frame_ms());
+        hal_poll_events();
+    }
+    music_play_death();
+
     wr(0xEAC9u, 0u);
     for (int i = 0; i < 16; i++) {
         death_anim();
         wr(0xEAC9u, (uint8_t)(rr(0xEAC9u) + 1u));
-        hal_wait_vsync();
+        hal_wait_game_frame(player_frame_ms());
         hal_poll_events();
     }
     for (;;) {
@@ -1209,13 +1220,16 @@ void player_death_run(void)
         }
         death_anim();
         wr(0xEAC9u, (uint8_t)(rr(0xEAC9u) + 1u));
-        hal_wait_vsync();
+        hal_wait_game_frame(player_frame_ms());
         hal_poll_events();
     }
     s_6F45_pixel();
     g_plr_frame = 0x0D;
     s_6F27(0x0Du);
-    for (int i = 0; i < 32; i++) { hal_wait_vsync(); hal_poll_events(); }
+    for (int i = 0; i < 32; i++) {
+        hal_wait_game_frame(player_frame_ms());
+        hal_poll_events();
+    }
     wr(0xE324u, (uint8_t)(rr(0xE324u) - 1u));
     wr(0xE336u, (uint8_t)(rr(0xE336u) - 1u));
     if (!rr(0xEAE0u)) {
@@ -1299,6 +1313,13 @@ void player_end_frame(void)
  * Pendiente de portar (misma rutina): F1=reiniciar sala, F2=vidas:=1,
  * y fila 7 (0xEAD4): F4→sub_4F93, F5→pausa sub_6358.
  * ========================================================================== */
+/* sub_5128: duración real de una iteración del game loop, medida en
+ * openMSX (tools/tr_speed.tcl): ms = 54.0 + 1.381 × EACA. */
+double player_frame_ms(void)
+{
+    return 54.0 + 1.381 * (double)rr(0xEACAu);
+}
+
 void player_speed_frame(uint8_t row6)
 {
     uint8_t a, d, e;
