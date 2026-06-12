@@ -297,8 +297,7 @@ bool hal_poll_events(void)
     bool down  = keys[SDL_SCANCODE_DOWN]  || keys[SDL_SCANCODE_S];
     bool left  = keys[SDL_SCANCODE_LEFT]  || keys[SDL_SCANCODE_A];
     bool right = keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D];
-    bool fire  = keys[SDL_SCANCODE_Z]     || keys[SDL_SCANCODE_SPACE]
-              || keys[SDL_SCANCODE_LCTRL];
+    bool fire  = keys[SDL_SCANCODE_Z]     || keys[SDL_SCANCODE_SPACE];
 
     uint8_t dir = 0;
     if (up    && !left && !right) dir = 1;
@@ -789,6 +788,24 @@ bool hal_key_pressed(void)
     return (joy_state[0] & 0x10u) != 0;
 }
 
+/*
+ * Fila 6 de la matriz MSX (activo-bajo). Mapeo host:
+ *   CTRL → CTRL (bit1, correr)   ALT → GRAPH (bit2, turbo con CTRL)
+ *   SHIFT → SHIFT (bit0)         F1-F3 → F1-F3 (bits 5-7)
+ */
+uint8_t hal_msx_keyrow6(void)
+{
+    const uint8_t *keys = SDL_GetKeyboardState(NULL);
+    uint8_t row = 0xFFu;
+    if (keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]) row &= (uint8_t)~0x01u;
+    if (keys[SDL_SCANCODE_LCTRL]  || keys[SDL_SCANCODE_RCTRL])  row &= (uint8_t)~0x02u;
+    if (keys[SDL_SCANCODE_LALT]   || keys[SDL_SCANCODE_RALT])   row &= (uint8_t)~0x04u;
+    if (keys[SDL_SCANCODE_F1]) row &= (uint8_t)~0x20u;
+    if (keys[SDL_SCANCODE_F2]) row &= (uint8_t)~0x40u;
+    if (keys[SDL_SCANCODE_F3]) row &= (uint8_t)~0x80u;
+    return row;
+}
+
 /* ==========================================================================
  * TIMING / VSYNC
  * ========================================================================== */
@@ -816,6 +833,21 @@ void hal_wait_vsync(void)
         SDL_Delay((uint32_t)(frame_period_ms - elapsed));
     }
     frame_start_ticks = SDL_GetTicks64();
+}
+
+/*
+ * Pacea una iteración del game loop: convierte `ms` a VBlanks con resto
+ * fraccional acumulado, así la media de iteraciones converge a `ms` exactos
+ * y music_isr_tick() sigue corriendo una vez por VBlank (como el ISR real).
+ */
+void hal_wait_game_frame(double ms)
+{
+    static double carry = 0.0;
+    double frames = ms / (double)frame_period_ms + carry;
+    int n = (int)frames;
+    if (n < 1) n = 1;
+    carry = frames - (double)n;
+    for (int i = 0; i < n; i++) hal_wait_vsync();
 }
 
 void hal_delay(uint8_t frames)

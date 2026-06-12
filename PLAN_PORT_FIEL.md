@@ -216,9 +216,18 @@ Mapa original (referencia):
   frames de pausa, DEC vidas (E324+E336), EAE0=1, LDIR E336→E324 (commit),
   sub_6134. El caller: EAE0 → si vidas>0 recargar la sala (respawn en el
   punto de entrada E322/E323); si 0 → game over al título.
-- `0x62D8` (mapeado) = dificultad/pausa/fin-de-demo: ¡la velocidad 0xEACA
-  sale de los bits de (0xEAD3)! (bit1→0x70 normal); (0xEAD4) bit1 → pausa
-  sub_6358. (0xEAD3/D4 = config, default 0xFF.)
+- `0x62D8` (rama juego = 62FA) — **VELOCIDAD ✅ portada (2026-06-12)**:
+  0xEAD3/D4 NO son config (nota vieja falsa): son las filas 6 y 7 de la
+  MATRIZ DE TECLADO acumuladas (AND de SNSMAT) en el busy-wait de sub_5128
+  (EACD..EAD5, activo-bajo). Fila 6: bit1=CTRL suelto → EACA=0x70 (normal);
+  CTRL → 0x30 (correr); CTRL+GRAPH (bit2) → 0x01 (turbo); cada modo setea
+  también transpose (0xEAF1=0/7/0x0C) y tempo música (0xEAF3=6/4/2; CAPS
+  bit3 → 0 = mute). El paceo real es CPU-bound (sub_5128 = EACA×sub_50E8,
+  sin vsync); medido en openMSX (tools/tr_speed.tcl, sala 01):
+  ms/iter = 54.0 + 1.381×EACA → 0x70=208.8ms, 0x30=119.9ms, 0x01=55.6ms.
+  Port: player_speed_frame() + hal_wait_game_frame() (vblanks fraccionales).
+  Pendiente de la misma rutina: F1=reiniciar sala (EAE0=1), F2=vidas:=1,
+  fila 7 (0xEAD4): F4→sub_4F93, F5→pausa sub_6358.
 - **Hecho cuando**: posiciones frame a frame == `enemies_paths.c` (4537
   posiciones) para los 148 enemigos → borrar enemies_paths.c y el
   path-replay de enemies_port.c (el render pasa a ser por celdas reales

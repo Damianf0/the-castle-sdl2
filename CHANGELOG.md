@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-06-12 — Velocidad real del juego: lenta + CTRL=correr (0x62FA)
+
+Reportado por el usuario: el juego real tiene una velocidad general más
+lenta y otra rápida manteniendo una tecla; el port corría siempre rápido.
+
+- **RE**: 0xEAD3/D4 no eran "config de dificultad" (nota vieja del plan,
+  falsa): son las filas 6/7 de la matriz de teclado acumuladas por AND de
+  SNSMAT en el busy-wait de sub_5128 (bloque 0xEACD..0xEAD5, activo-bajo).
+  La rama de juego de 0x62D8 (62FA) decide por fila 6: CTRL suelto →
+  EACA=0x70; CTRL → 0x30; CTRL+GRAPH → 0x01; y setea además el transpose
+  (0xEAF1=0/7/0x0C) y el tempo de la música (0xEAF3=6/4/2, CAPS = mute).
+  El paceo real es CPU-bound: sub_5128 quema EACA llamadas a sub_50E8
+  (GTTRIG/GTSTCK/SNSMAT) — no hay espera de vsync en el loop de juego.
+- **Medición** (tools/tr_speed.tcl, openMSX, sala 01, ajuste lineal):
+  ms/iteración = 54.0 + 1.381×EACA → normal 208.8 ms (~4.8 it/s),
+  CTRL 119.9 ms (~8.3 it/s), CTRL+GRAPH 55.6 ms (~18 it/s).
+- **Port**: `player_speed_frame()` (62FA fiel, player.c) +
+  `hal_wait_game_frame(ms)` (hal_sdl2.c: convierte ms a VBlanks con resto
+  fraccional — la música sigue tickeando a 60 Hz como el ISR real) +
+  `hal_msx_keyrow6()` (host CTRL→CTRL, ALT→GRAPH). El host LCTRL deja de
+  ser fire (queda Z/Space): ahora es la tecla de CORRER, como en el MSX.
+- Pendiente de la misma rutina: F1=reiniciar sala, F2=vidas:=1, F4, F5=pausa.
+
 ## 2026-06-12 — Fase 4: motor BAT real (enemigos vivos) + suite de fixtures
 
 ### sub_438D/43BF/719D + cerebros portados (player.c)

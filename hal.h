@@ -118,6 +118,14 @@ uint8_t hal_joystick_read(uint8_t port);
  */
 bool    hal_key_pressed(void);
 
+/**
+ * hal_msx_keyrow6() — Fila 6 de la matriz de teclado MSX, activo-bajo
+ * (bit0=SHIFT, bit1=CTRL, bit2=GRAPH, bit3=CAPS, bit5=F1, bit6=F2, bit7=F3).
+ * El juego la lee acumulada en (0xEAD3) y decide la velocidad en 0x62FA:
+ * CTRL = correr, CTRL+GRAPH = turbo. Host: CTRL→CTRL, ALT→GRAPH.
+ */
+uint8_t hal_msx_keyrow6(void);
+
 /* ==========================================================================
  * TIMING
  * ========================================================================== */
@@ -134,6 +142,14 @@ void    hal_wait_vsync(void);
  * hal_delay() — Espera N frames completos (útil para pausas en cutscenes).
  */
 void    hal_delay(uint8_t frames);
+
+/**
+ * hal_wait_game_frame() — Espera `ms` milisegundos en unidades de VBlank
+ * (acumulador fraccional: la media converge a `ms` exactos y la música
+ * sigue tickeando a 60 Hz). El juego real pacea el loop con el busy-wait
+ * de sub_5128 (EACA × sub_50E8), no con el VBlank.
+ */
+void    hal_wait_game_frame(double ms);
 
 #ifdef __cplusplus
 }

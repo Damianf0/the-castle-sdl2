@@ -1091,6 +1091,31 @@ void player_end_frame(void)
     wr(0xEAC9u, (uint8_t)(rr(0xEAC9u) + 1u));
 }
 
+/* ==========================================================================
+ * 0x62D8 (rama 62FA, juego real) — velocidad/teclas de sistema por frame.
+ * C = (0xEAD3) = fila 6 de la matriz acumulada en el busy-wait (activo-bajo).
+ *
+ *   6318: BIT 1,C (CTRL)  suelto      → A=0x70 D=0x00 E=6  (normal)
+ *   631C: BIT 2,C (GRAPH) suelto      → A=0x30 D=0x07 E=4  (CTRL: correr)
+ *   6320: CTRL+GRAPH                  → A=0x01 D=0x0C E=2  (turbo)
+ *   6336: BIT 3,C (CAPS) pulsado      → E=0 (música muda)
+ *   633C: (0xEACA)=A velocidad, (0xEAF1)=D transpose, (0xEAF3)=E tempo
+ *
+ * Pendiente de portar (misma rutina): F1=reiniciar sala, F2=vidas:=1,
+ * y fila 7 (0xEAD4): F4→sub_4F93, F5→pausa sub_6358.
+ * ========================================================================== */
+void player_speed_frame(uint8_t row6)
+{
+    uint8_t a, d, e;
+    if (row6 & 0x02u)        { a = 0x70u; d = 0x00u; e = 6u; }
+    else if (row6 & 0x04u)   { a = 0x30u; d = 0x07u; e = 4u; }
+    else                     { a = 0x01u; d = 0x0Cu; e = 2u; }
+    if ((row6 & 0x08u) == 0u) e = 0u;
+    wr(0xEACAu, a);
+    wr(0xEAF1u, d);
+    wr(0xEAF3u, e);
+}
+
 void player_sync_pixel(void)
 {
     g_plr_px = ((int)rl_ram_rb(0xE334u) + 1) * 8;

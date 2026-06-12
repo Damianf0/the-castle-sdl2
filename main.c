@@ -344,7 +344,13 @@ void faithful_play(uint8_t start_room)
         keys_update(g_plr_px, g_plr_py, 16, 16);
         items_update(g_plr_px, g_plr_py, 16, 16);
         player_end_frame();    /* 40AF: cierre del frame (paridad compartida) */
-        hal_wait_vsync();
+
+        /* 0x62FA + sub_5128: velocidad real. El juego pacea el loop con un
+         * busy-wait de EACA iteraciones de sub_50E8; medido en openMSX
+         * (tools/tr_speed.tcl): ms/iter = 54.0 + 1.381×EACA →
+         * 0x70=209ms (normal), CTRL 0x30=120ms, CTRL+GRAPH 0x01=55ms. */
+        player_speed_frame(hal_msx_keyrow6());
+        hal_wait_game_frame(54.0 + 1.381 * (double)rl_ram_rb(0xEACAu));
     }
     g_actors_on = 0;
 }

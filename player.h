@@ -23,6 +23,11 @@ void player_frame(uint8_t stick, uint8_t trig);
  * frame completo (tras bloques/bats/daño, que comparten la paridad). */
 void player_end_frame(void);
 
+/* 0x62FA: velocidad por teclas de sistema (row6 = fila 6 de la matriz MSX,
+ * activo-bajo). CTRL=correr (EACA 0x70→0x30), CTRL+GRAPH=turbo (0x01);
+ * escribe también transpose (0xEAF1) y tempo (0xEAF3) de la música. */
+void player_speed_frame(uint8_t row6);
+
 /* Devuelve y CONSUME el borde de salida (0xEAE1): 0=no, 1=arriba, 3=der,
  * 5=abajo, 7=izq. */
 uint8_t player_take_exit(void);
