@@ -281,12 +281,44 @@ Mapa original (referencia):
   del movedor 719D — el overlay muere).
 
 ### Fase 5 — Sistemas de juego
-- Puertas/llaves (`sub_442D`, `sub_438D`, `sub_4499`, `sub_758C`),
-  coleccionables y EFECTOS reales (`sub_434A`, dispatcher `sub_5BB0`: mapa,
-  power-ups, comida, tesoro, score), HUD (`sub_5A2D`), vidas/muerte/game over,
-  demo mode, condición de final.
-- Al completarse, muere el motor maqueta entero: `actors.c`, `*_port.c`,
-  `faithful_play()`, stubs de `main.c`.
+
+**PICKUP por celda ✅ portado y validado (2026-06-12)** — pickup.c:
+- `sub_5B96`: solo frames PARES; gate = colmap bit 0x04 en el top-left del
+  jugador; barrido e3d6 (16×4: activo/tipo/col/fila) por igualdad de
+  posición. `sub_5BB0` efectos: 0x22 mapa (SET 3 E321), 0x23 power-up ROJO
+  (E343=0x0A, música 0x79B7/0x79DE, ¡NO se borra de la sala!), 0x24 VERDE
+  (E344=0x10, 0x7964/0x7993), 0x25 reset de puertas (EAE2=1), 0x26 vida
+  extra, 0x27+ genérico: sprite de puntos (tabla ROM 0x64A2, plano 13,
+  timer EAF9=0x10) + score BCD (tabla 0x6490, sub_5D87 con DAA; carry del
+  byte medio = vida extra; hi-score E340 + redibujo HUD con dígitos tile
+  0x47+d en name 0x22/0x2A) + llaves de color (E337+tipo-0x2A, HUD 5E01).
+- `sub_5CD4` borrar item (blanqueo 2x2 + SFX EAF7=0x10 + 1 frame);
+  `sub_5CB5` jingle de ítem especial (0x7A03/0x7A3C vía 5B2F) + commit
+  (LDIR E334→E322 + 6134). `sub_4499`/74E9: animador de la llave dorada
+  0x21 (sprite plano 11 patrones 0x2A/0x2B + tiles deltas 0-3/4-7).
+- Vidas HUD (5E5C: iconos tile 0x0D desde name 0x63, máx 14).
+- Suite `pickup` nueva: jugador caminando con hold (spawn por E322/23),
+  traza e3d6+score+llaves+vidas frame-exacta vs openMSX (tools/tr_pick.tcl
+  + gen_pick_fixtures.py): salas 04 (comida+score), 00 (llaves), 02 (vida)
+  — 301/301 exactas. MAQUETA MUERTA: keys_port/items_port/doors_port
+  BORRADOS (el harness PICKTRACE maneja transiciones de sala).
+
+Pendiente de la fase:
+- Ítems 0x20 (victoria, sala 09) y 0x21 (salas 50/99): las SECUENCIAS
+  bloqueantes sub_51D9 / sub_518E (usa la tabla 0x5748: sala/col/fila →
+  handler; ¡"respawns 0x5748" de las notas viejas era ESTO!) + helpers
+  4AE2 (flash de pantalla)/4B13/4E8E/4F93 — hoy son pickups mecánicos.
+- MINIMAPA (0x22): sub_64C3 (área name 7×4 tiles 0x0E-0x29 en cols 17-23)
+  + 638E (sprites planos 0-5 patrones 0x2F+) + 63BB/640F (pinta salas
+  visitadas desde E000 vía 60EB) + 63FD (sala actual; hook en rl_room_exit).
+- Color-cycling del power-up 0x23 (sub_7510, cosmético).
+- CAÍDA AL POZO: caer por el borde inferior (visto en sala 06) termina la
+  partida y vuelve al título/demo en el juego real — trazar dónde retorna
+  el loop (no es exit edge 5: EAE1 queda 0) y portarlo con el flujo título.
+- Demo mode real (input replay 0x7ABE vía EAE5/EAE7 en sub_5128) — al
+  portarlo muere el motor maqueta restante (actors.c, game_frame, camera.c,
+  room.c, enemies.c, doors.c legacy).
+- Condición de final del juego y game over al título.
 
 ### Fase 6 — Música/PSG verificada
 - No confiar en lo actual de oído (ya hubo datos mal direccionados: 0x7ABE vs

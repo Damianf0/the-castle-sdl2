@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-06-12 — Fase 5: PICKUP por celda con efectos reales — muere la maqueta AABB
+
+- **pickup.c nuevo** (sub_5B96 + dispatcher sub_5BB0): pickup por celda
+  exacta (colmap bit 0x04 + igualdad con el top-left del jugador, solo
+  frames pares) con TODOS los efectos no-cinemáticos: power-ups rojo/verde
+  con su música (el rojo no se consume de la sala), reset de puertas
+  (0x25), vida extra (0x26), mapa (flag), y el genérico 0x27+: sprite de
+  puntos con timer (plano 13, EAF9), score BCD de 6 dígitos con DAA
+  (carry del medio = vida extra), hi-score, llaves de color con HUD —
+  más los redibujos reales del HUD (dígitos tile 0x47+d, vidas tile 0x0D).
+- **Animador de e3d6** (sub_4499/74E9): la llave dorada 0x21 parpadea con
+  sprite (plano 11) + tiles alternantes, y se esconde al agarrarla.
+- **Maqueta muerta**: keys_port.c/h, items_port.c/h y doors_port.c/h
+  BORRADOS; faithful_play corre 100% motor real (quedan actors/camera/
+  room/enemies/doors legacy SOLO para el demo del título).
+- **Suite `pickup`**: oráculo openMSX con el jugador caminando (spawn vía
+  E322/23 + hold; el harness CASTLE_PICKTRACE replica transiciones de
+  sala): salas 04 (4 comidas + score), 00 (2 llaves), 02 (vida extra) —
+  frame-exactas 301/301. 14/14 suites.
+- Hallazgo documentado: caer a un POZO en el juego real termina la
+  partida (vuelve a título/demo) — pendiente con el flujo de título.
+- Pendientes anotados: secuencias de 0x20/0x21 (la tabla 0x5748 de las
+  notas viejas era de sub_518E), minimapa (64C3/638E/640F), color-cycling
+  del 0x23.
+
 ## 2026-06-12 — Fase 4 motor COMPLETO: pistón 0x1B + partículas reales
 
 - **Pistón vertical 0x1B** (6 salas): nace inerte; se dispara EMPUJANDO la

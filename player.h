@@ -55,6 +55,16 @@ void player_traps_frame(void);
  * la restauración del tema). Llamar DESPUÉS de player_end_frame. */
 void player_tail_frame(void);
 
+/* sub_6EE1: plano de sprite genérico (patrón, plano, posición en px). */
+void player_sprite_plane(uint8_t pat, uint8_t plane, int x, int y);
+
+/* --- pickup.c (Fase 5) --- */
+/* sub_5B96/5BB0: pickup por celda + efectos. PRIMERO en el frame (orden
+ * real: tras 62D8, antes de 442D). */
+void pickup_frame(void);
+/* sub_4499: animador de e3d6 (llave dorada 0x21). Entre bats y daño. */
+void pickup_anim_frame(void);
+
 /* sub_434A: motor por frame de los objetos COLL (bloques empujables con
  * gravedad y derrape por rampas, trampas 0x34). Llamar ANTES de
  * player_frame en cada frame (orden del game loop real). */

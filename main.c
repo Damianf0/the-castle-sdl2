@@ -31,9 +31,6 @@
 #include "game.h"
 #include "geom.h"
 #include "actors.h"
-#include "keys_port.h"
-#include "items_port.h"
-#include "doors_port.h"
 #include "blocks_port.h"
 #include "tiledata.h"
 #include "room_loader.h"
@@ -307,16 +304,15 @@ void faithful_play(uint8_t start_room)
     rl_load_room(room);        /* sala desde el ROM: VRAM + tablas (sub_64DD) */
     player_sync_pixel();       /* sub_6F45 + sub_6F27 (cierre real de sub_64DD) */
     music_room_start();        /* 0x656B: tema por sala (cola de sub_64DD) */
-    keys_room_init(room);
-    items_room_init(room);
     g_actors_on = 1;
 
     /* MOTOR FIEL completo: jugador (sub_40BB+6F5C), bloques (sub_434A),
-     * ENEMIGOS reales (sub_438D: cerebros + movedor por celdas — el
-     * path-replay murió), daño por contacto (sub_5A2D) con muerte/respawn
-     * (sub_5A63), puertas (sub_4325/758C), transiciones (sub_5053).
-     * Maqueta restante: pickup AABB (efectos reales = Fase 5). */
+     * ENEMIGOS reales (sub_438D), daño/muerte (sub_5A2D/5A63), puertas,
+     * transiciones (sub_5053), estructurales e43e y PICKUP por celda con
+     * efectos reales (sub_5B96/5BB0 — la maqueta AABB murió). */
     while (hal_poll_events()) {
+        pickup_frame();        /* sub_5B96: pickup (tras 62D8, antes de 442D) */
+        if (rl_ram_rb(0xEAE3u)) break;         /* 0x20: fin de la partida */
         player_elev_frame();   /* sub_442D: ascensores PRIMERO */
         player_coll_frame();   /* sub_434A: bloques ANTES del jugador */
         player_frame(hal_joystick_read(0), hal_key_pressed() ? 1u : 0u);
@@ -329,12 +325,11 @@ void faithful_play(uint8_t start_room)
                 rl_load_room(room);
                 player_sync_pixel();
                 music_room_start();
-                keys_room_init(room);
-                items_room_init(room);
             }
         }
         player_traps_frame();  /* sub_4406: trampas 0x1F antes de los BATs */
         player_bats_frame();   /* sub_438D: enemigos DESPUÉS del jugador */
+        pickup_anim_frame();   /* sub_4499: animador de e3d6 */
         if (player_check_death()) {            /* sub_5A2D */
             player_death_run();                /* sub_5A63 */
             if (rl_ram_rb(0xE324u) == 0u) break;   /* game over → título */
@@ -343,11 +338,7 @@ void faithful_play(uint8_t start_room)
             rl_load_room(room);                /* respawn en el punto de entrada */
             player_sync_pixel();
             music_room_start();
-            keys_room_init(room);
-            items_room_init(room);
         }
-        keys_update(g_plr_px, g_plr_py, 16, 16);
-        items_update(g_plr_px, g_plr_py, 16, 16);
         player_end_frame();    /* 40AF: cierre del frame (paridad compartida) */
         player_tail_frame();   /* sub_623C: partícula + timers de power-up */
 
@@ -637,6 +628,82 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* --- Modo traza de PICKUP (sin SDL): CASTLE_PICKTRACE=out.txt +
+     * CASTLE_ROOM + CASTLE_FRAMES + CASTLE_PCOL/PROW (spawn vía E322/23) +
+     * CASTLE_HOLD=R|L (+CASTLE_HOLDFROM): el jugador camina y junta items.
+     * Vuelca por frame los slots e3d6 activos + score + llaves + vidas —
+     * comparable contra tests/fixtures/pick/ (tools/tr_pick.tcl). */
+    {
+        const char *pt = getenv("CASTLE_PICKTRACE");
+        if (pt) {
+            uint8_t room = 0x70u;
+            int nframes = 300;
+            const char *rs = getenv("CASTLE_ROOM");
+            const char *nf = getenv("CASTLE_FRAMES");
+            const char *pc = getenv("CASTLE_PCOL"), *pr = getenv("CASTLE_PROW");
+            const char *hold = getenv("CASTLE_HOLD");
+            int holdfrom = getenv("CASTLE_HOLDFROM")
+                         ? atoi(getenv("CASTLE_HOLDFROM")) : 0;
+            FILE *f = fopen(pt, "w");
+            if (rs) room = (uint8_t)strtol(rs, NULL, 16);
+            if (nf) nframes = atoi(nf);
+            if (!f) { free(rom_buf); return 1; }
+            g_rom = rom_buf; g_rom_size = rom_size;
+            rl_reset();
+            if (pc) rl_ram_wb(0xE322u, (uint8_t)atoi(pc));
+            if (pr) rl_ram_wb(0xE323u, (uint8_t)atoi(pr));
+            rl_load_room(room);
+            player_sync_pixel();
+            for (int i = 0; i < nframes; i++) {
+                rl_ram_wb(0xEAE0u, 0u);
+                rl_ram_wb(0xE343u, 1u);
+                fprintf(f, "%d", i);
+                for (int s = 0; s < 16; s++) {
+                    uint16_t ix = (uint16_t)(0xE3D6u + s * 4u);
+                    if (rl_ram_rb(ix))
+                        fprintf(f, " %d:%02X,%d,%d", s,
+                                rl_ram_rb((uint16_t)(ix + 1u)),
+                                rl_ram_rb((uint16_t)(ix + 2u)),
+                                rl_ram_rb((uint16_t)(ix + 3u)));
+                }
+                fprintf(f, " sc=%02X%02X%02X k=%d,%d,%d,%d,%d,%d v=%d",
+                        rl_ram_rb(0xE33Du), rl_ram_rb(0xE33Eu), rl_ram_rb(0xE33Fu),
+                        rl_ram_rb(0xE337u), rl_ram_rb(0xE338u), rl_ram_rb(0xE339u),
+                        rl_ram_rb(0xE33Au), rl_ram_rb(0xE33Bu), rl_ram_rb(0xE33Cu),
+                        rl_ram_rb(0xE336u));
+                fprintf(f, "\n");
+                pickup_frame();
+                player_elev_frame();
+                player_coll_frame();
+                {
+                    uint8_t stick = 0u;
+                    if (hold && i >= holdfrom)
+                        stick = (hold[0] == 'L') ? 7u : 3u;
+                    player_frame(stick, 0u);
+                }
+                {
+                    uint8_t edge = player_take_exit();
+                    if (edge) {                  /* transición como el real */
+                        rl_room_exit(edge);
+                        room = rl_ram_rb(0xE320u);
+                        rl_load_room(room);
+                        player_sync_pixel();
+                    }
+                }
+                player_traps_frame();
+                player_bats_frame();
+                pickup_anim_frame();
+                player_end_frame();
+                player_tail_frame();
+            }
+            fclose(f);
+            printf("CASTLE_PICKTRACE: sala 0x%02X, %d frames -> %s\n",
+                   room, nframes, pt);
+            free(rom_buf);
+            return 0;
+        }
+    }
+
     /* --- 2. Inicializar HAL SDL2 --- */
 #ifdef CASTLE_PAL_TIMING
     bool pal = true;
@@ -721,10 +788,8 @@ int main(int argc, char *argv[])
                 rl_reset();
                 rl_load_room(room);
                 player_sync_pixel();
-                keys_room_init(room);
-                items_room_init(room);
                 if (getenv("CASTLE_GIVEKEYS")) {
-                    for (int c = 0; c < KEY_COLORS; c++)
+                    for (int c = 0; c < 6; c++)
                         rl_ram_wb((uint16_t)(0xE337u + c), 9u);
                     rl_keys_hud_redraw();
                 }
@@ -732,6 +797,7 @@ int main(int argc, char *argv[])
                 for (int f = 0; f < nframes; f++) {
                     uint8_t stick = 0u, trig = 0u;
                     char m = (mv && f < (int)strlen(mv)) ? mv[f] : '.';
+                    pickup_frame();
                     player_elev_frame();
                     player_coll_frame();
                     switch (m) {
@@ -753,18 +819,16 @@ int main(int argc, char *argv[])
                             geom_decode_room(room);
                             rl_load_room(room);
                             player_sync_pixel();
-                            keys_room_init(room);
-                            items_room_init(room);
                             printf(">>> f%02d transicion a sala 0x%02X\n", f, room);
                         }
                     }
                     player_traps_frame();
                     player_bats_frame();
+                    pickup_anim_frame();
                     if (player_check_death())
                         printf(">>> f%02d MUERTE por contacto\n", f);
-                    keys_update(g_plr_px, g_plr_py, 16, 16);
-                    items_update(g_plr_px, g_plr_py, 16, 16);
                     player_end_frame();
+                    player_tail_frame();
                     hal_vdp_present();
                     {
                         char p[256];

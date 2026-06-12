@@ -7,10 +7,7 @@
 #include <stdlib.h>
 #include "actors.h"
 #include "room_loader.h"
-#include "doors_port.h"
 #include "blocks_port.h"
-#include "keys_port.h"
-#include "items_port.h"
 
 /* Geometría = VRAM real del ROM: 32x24 tiles, HUD en las filas 0..2. */
 #define ROOM_W (RT_COLS * 8)   /* 256 */

@@ -454,6 +454,12 @@ static void s_6EE1(uint8_t a, uint8_t plane, int x, int y)
     hal_vdp_write_vram((uint16_t)(attr + 3), col);
 }
 
+/* s_6EE1 expuesto (lo usa el pickup: sprite de puntos y llave dorada) */
+void player_sprite_plane(uint8_t pat, uint8_t plane, int x, int y)
+{
+    s_6EE1(pat, plane, x, y);
+}
+
 /* sub_5D63: el PUFF de desintegración en la celda (h,l): SFX (0xEAF6=0x32)
  * + 3 frames BLOQUEANTES (sub_5128) con los patrones 0x2C-0x2E en el plano
  * de sprite 12 (posición vía sub_6F4D), y lo esconde (patrón 0x3F).

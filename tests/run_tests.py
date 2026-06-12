@@ -283,6 +283,41 @@ def run(results):
         return errs
     check('estructurales e43e (cintas/fuego/ascensores/trampas 0x1F)', t_e43e)
 
+    # --- 6e. pickup por celda vs trazas-oráculo (Fase 5) -----------------------
+    # CASTLE_PICKTRACE: el jugador camina sobre los items (spawn por E322/23 +
+    # hold) y debe reproducir frame a frame los slots e3d6 + score + llaves +
+    # vidas de openMSX (tools/gen_pick_fixtures.py + tools/tr_pick.tcl).
+    def t_pick():
+        import glob as _g
+        errs = []
+        for bf in sorted(_g.glob(os.path.join(FIX, 'pick', 'pick_*.txt'))):
+            lines = open(bf).read().splitlines()
+            hdr = lines[0].split()  # "# room XX pcol P prow R hold H from F"
+            xx, pcol, prow = hdr[2], hdr[4], hdr[6]
+            out = os.path.join(tempfile.gettempdir(), 'picktrace_%s.txt' % xx)
+            env = dict(os.environ, CASTLE_PICKTRACE=out, CASTLE_ROOM=xx,
+                       CASTLE_FRAMES=str(len(lines) - 1),
+                       CASTLE_PCOL=pcol, CASTLE_PROW=prow,
+                       CASTLE_HOLD=hdr[hdr.index('hold') + 1],
+                       CASTLE_HOLDFROM=hdr[hdr.index('from') + 1])
+            r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
+                               text=True, timeout=60)
+            if r.returncode != 0 or not os.path.exists(out):
+                errs.append('sala %s: exe falló' % xx)
+                continue
+            want = [l for l in lines[1:] if l.strip()]
+            got = [l for l in open(out).read().splitlines() if l.strip()]
+            os.remove(out)
+            n = min(len(want), len(got))
+            bad = sum(1 for i in range(n) if want[i] != got[i])
+            if bad:
+                first = next(i for i in range(n) if want[i] != got[i])
+                errs.append('sala %s: %d/%d frames difieren (primero f%d:\n'
+                            '  oráculo %s\n  port    %s)' %
+                            (xx, bad, n, first, want[first], got[first]))
+        return errs
+    check('pickup por celda (items/score/llaves/vidas)', t_pick)
+
     # --- 7. título vs oráculo -------------------------------------------------
     # CASTLE_TITLEDUMP corre la intro real (rápido) y vuelca la VRAM en el
     # mismo momento que tools/cap_title.tcl capturó la del juego real en
