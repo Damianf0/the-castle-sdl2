@@ -160,12 +160,56 @@ handlers 0x5C3A+) en vez del AABB maqueta; 0x62D8/0x623C (render/triggers).
   frame == traza de openMSX (`trace_jump*.tcl`, `dump_walk.tcl`) durante N
   cientos de frames, incluyendo salto, caída, escaleras, daño.
 
-### Fase 4 — Enemigos y objetos dinámicos (`sub_6F5C` y handlers)
-- Portar la IA real por tipo (roller, bat, wall-follower, ascensores, pinchos).
-  `enemies.c` tiene parte traducida; validar y completar.
+### Fase 4 — Enemigos y objetos dinámicos — MAPA COMPLETO (2026-06-11)
+
+**Motor COLL ✅ portado** (bloques empujables: ver CHANGELOG (6)).
+
+**Motor BAT (enemigos) — mapeado, listo para portar a player.c:**
+- Driver `sub_438D`: tabla 0xE416 (8 slots). Pasada 1: cerebro `sub_43BF`
+  para cada activo. Pasada 2: si (field4 & 5) → 43BF de nuevo; SIEMPRE
+  `sub_719D` (movedor).
+- Cerebro `sub_43BF` (solo frames PARES): despacho por tipo:
+  0x36 = estático (flags sin cambio; mover→sub_7279 partículas/trampa).
+  0x37 → `sub_4901`: volador 4-direcciones que PERSIGUE al jugador
+    (45D0 = ¿jugador a ±8 cols?, 45EF/45F8 = comparar col/fila del jugador,
+    4586 = probes vertical (B,C+2)/(B,C-1) con 4566 (&0x30)).
+  0x38 → `sub_48AD`: caminador-perseguidor: gravedad (4502 &0x20 debajo);
+    horizontal con rebote (45AD); cerca del jugador → SET 2+3 (¡SUBE!) si
+    arriba libre.
+  0x39 → `sub_4882`: patrulla horizontal con gravedad y rebote; D de 45AD
+    por cercanía (45D0 carry).
+  0x3A → `sub_487A` y 0x3B+ → `sub_4872`: wrappers de `sub_45AD`-family
+    (releer 4868-4880: son 2 wrappers casi idénticos con D=0 → 45AD-modo).
+- Helpers: `sub_45AD(flags, modo)` = REBOTE: D'=44C2(modo) en (B+2,C) der,
+  E'=44C2 en (B-1,C) izq (via sub_4599); der libre+izq bloq → SET 1 (der);
+  der bloq+izq libre → RES 1; ambos → RES 0 (parar). `sub_45D0` = jugador a
+  ±8 columnas (carry=no). `sub_4586` = par vertical abajo(C+2)/arriba(C-1)
+  con 4566.
+- Movedor `sub_719D` (gemelo de 710B con verticales completos y ANIMACIÓN
+  por dirección): finales deltas 0-3 (D=0) o 4-7 (D=4, espejado/variante);
+  transiciones: derecha D=0x16(22), izquierda D=0x0C(12) (3x2 deltas +0..5);
+  abajo D=0x1C(28), arriba D=0x22(34) (2x3). Frame PAR baja: si las 2 celdas
+  de abajo (4566 modo 1) BLOQUEAN → EL BAT MUERE (slot[0]=0 + blank 2x2 +
+  puff sub_5D63) — los que se lanzan en picada. Subida: celda C-1 con 4566;
+  bloqueada → 725D (leer 724B-7279). 0x36 → sub_7279 (trampa murciélago,
+  partículas). Falta leer: 4868-4880 (wrappers 3A/3B) y 7250-72C9.
+- **Daño por contacto `sub_5A2D` (mapeado)**: solo frames IMPARES; si
+  (0xE343)≠0 → INVULNERABLE (power-up 0x23, el del tinte parpadeante);
+  4 probes `sub_5AF8` en las celdas del cuerpo: celda con bit 0x10 (peligro:
+  0x38 BAT / 0x18 trampa) y sin 0x80 → flags D=E6EE&7 (saltando RES 2;
+  (0xE344) anula otro bit — leer 5B23-5B2E) → ≠0 = MUERTE `sub_5A63`:
+  música muerte (0x7A73/0x7A8F — ¡eran esto, no música de juego!), 16
+  frames de caída (5B5F), sigue cayendo hasta fila ≥0x12, frame 0x0D, 32
+  frames de pausa, DEC vidas (E324+E336), EAE0=1, LDIR E336→E324 (commit),
+  sub_6134. El caller: EAE0 → si vidas>0 recargar la sala (respawn en el
+  punto de entrada E322/E323); si 0 → game over al título.
+- `0x62D8` (mapeado) = dificultad/pausa/fin-de-demo: ¡la velocidad 0xEACA
+  sale de los bits de (0xEAD3)! (bit1→0x70 normal); (0xEAD4) bit1 → pausa
+  sub_6358. (0xEAD3/D4 = config, default 0xFF.)
 - **Hecho cuando**: posiciones frame a frame == `enemies_paths.c` (4537
-  posiciones grabadas) para los 148 enemigos. Entonces `enemies_paths.c` y
-  `enemies_port.c` (path-replay) se borran.
+  posiciones) para los 148 enemigos → borrar enemies_paths.c y el
+  path-replay de enemies_port.c (el render pasa a ser por celdas reales
+  del movedor 719D — el overlay muere).
 
 ### Fase 5 — Sistemas de juego
 - Puertas/llaves (`sub_442D`, `sub_438D`, `sub_4499`, `sub_758C`),
