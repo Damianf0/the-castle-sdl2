@@ -105,8 +105,9 @@ typedef struct {
 /* Envelope generator state */
 static uint16_t psg_env_period;   /* R11 | (R12 << 8) */
 static uint8_t  psg_env_shape;    /* R13: 0x08=attack, 0x00=sawdown, etc. */
-static uint32_t psg_env_phase;    /* fase del envelope (0..65535) */
+static uint32_t psg_env_phase;    /* fase de la rampa de 16 pasos (0..65535) */
 static uint8_t  psg_env_vol;      /* volumen actual del envelope (0-15) */
+static bool     psg_env_done;     /* shape sin continue/hold: rampa terminada */
 
 static PsgChannel psg_ch[PSG_CHANNELS];
 static uint8_t    psg_noise_period;  /* R6  */
@@ -648,6 +649,7 @@ void hal_psg_write(uint8_t reg, uint8_t val)
             psg_env_shape  = val;
             psg_env_phase  = 0u;
             psg_env_vol    = (val & 0x04u) ? 0u : 0x0Fu; /* attack starts at 0 or 15 */
+            psg_env_done   = false;                      /* R13 re-dispara la rampa */
             break;
         default: break;
     }
@@ -695,36 +697,43 @@ static void psg_audio_callback(void *userdata, uint8_t *stream, int len)
     uint32_t noise_inc = psg_noise_period ? (uint32_t)(
         (PSG_CLOCK / (16.0 * psg_noise_period)) / AUDIO_FREQ * 65536.0) : 0;
 
-    /* Incremento de envelope */
+    /* Incremento de envelope: un PASO del AY dura 256×EP ciclos y la rampa
+     * son 16 pasos → rampa completa = 4096×EP (con el EP del BIOS 0x1C00,
+     * ~16 s: validado contra openMSX con tools/tr_psg.tcl). */
     uint32_t env_inc = 0u;
     if (psg_env_period > 0u) {
-        double env_freq = PSG_CLOCK / (256.0 * psg_env_period);
-        env_inc = (uint32_t)(env_freq / AUDIO_FREQ * 65536.0);
+        double ramp_freq = PSG_CLOCK / (4096.0 * psg_env_period);
+        env_inc = (uint32_t)(ramp_freq / AUDIO_FREQ * 65536.0);
     }
 
     for (int i = 0; i < nsamples; i++) {
         int32_t mixed = 0;
 
         /* Actualizar envelope generator */
-        if (env_inc > 0u) {
+        if (env_inc > 0u && !psg_env_done) {
             uint32_t prev_ep = psg_env_phase;
             psg_env_phase += env_inc;
             if (psg_env_phase < prev_ep) {
-                /* overflow: un ciclo de envelope completo */
-                bool attack  = (psg_env_shape & 0x04u) != 0u;
+                /* overflow: termina una rampa de 16 pasos */
+                bool cont      = (psg_env_shape & 0x08u) != 0u;
+                bool attack    = (psg_env_shape & 0x04u) != 0u;
                 bool alternate = (psg_env_shape & 0x02u) != 0u;
-                bool hold    = (psg_env_shape & 0x01u) != 0u;
-                if (hold) {
-                    psg_env_vol = attack ? 0x0Fu : 0x00u;
+                bool hold      = (psg_env_shape & 0x01u) != 0u;
+                if (!cont) {
+                    psg_env_vol  = 0u;     /* shapes 0-7: una rampa y a 0 */
+                    psg_env_done = true;
+                } else if (hold) {
+                    psg_env_vol  = (attack != alternate) ? 0x0Fu : 0u;
+                    psg_env_done = true;
                 } else if (alternate) {
-                    /* invertir dirección */
-                    psg_env_shape ^= 0x04u;
+                    psg_env_shape ^= 0x04u;   /* triangular: invertir */
                 }
             }
-            /* Volumen del envelope en este sample */
-            bool env_attack = (psg_env_shape & 0x04u) != 0u;
-            uint8_t ep_vol = (uint8_t)((psg_env_phase >> 12) & 0x0Fu);
-            psg_env_vol = env_attack ? ep_vol : (uint8_t)(0x0Fu - ep_vol);
+            if (!psg_env_done) {
+                bool env_attack = (psg_env_shape & 0x04u) != 0u;
+                uint8_t ep_vol = (uint8_t)((psg_env_phase >> 12) & 0x0Fu);
+                psg_env_vol = env_attack ? ep_vol : (uint8_t)(0x0Fu - ep_vol);
+            }
         }
 
         /* Actualizar LFSR de ruido */

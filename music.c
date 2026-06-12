@@ -211,32 +211,19 @@ static void play_note(uint8_t note_idx, uint8_t psg_base)
     wrtpsg(psg_base,              per_lo);   /* R0 o R2: tone fine   */
     wrtpsg((uint8_t)(psg_base+1u), per_hi);  /* R1 o R3: tone coarse */
 
-    /* Calcular volumen y escribir al PSG.
-     *
-     * Original Z80:
-     *   A=0x10; SUB C; SRL C; SUB C → vol
-     *   Canal A (C=0): vol=0x10 → bit4=1 → ENVELOPE MODE
-     *   Canal B (C=2): vol=0x0D → fixed volume 13
-     *
-     * Envelope: el BIOS MSX deja R11=R12=0 → period=0 → envelope
-     * completa tan rápido que suena como ataque + decay instantáneo
-     * (sonido "plucked"). Para emularlo con SDL2 correctamente
-     * usamos vol=0x0F para canal A (máximo fijo) que es perceptualmente
-     * equivalente dado que el envelope period es 0 en el original.
-     */
+    /* Volumen — secuencia REAL por nota (oráculo tools/tr_psg.tcl, openMSX):
+     *   Canal A: R8=0x10 (envelope) y R13=0x00 (shape decay) por nota.
+     *            R11/R12 NUNCA se escriben: quedan los del BIOS (0x1C00),
+     *            paso de ~1s → en una nota de 200ms el envelope ni se mueve:
+     *            volumen lleno constante (el R13 re-dispara la rampa).
+     *   Canal B: R9=0x0D fijo. */
     uint8_t c_shifted = psg_base >> 1u;   /* 0=canal A, 1=canal B */
     uint8_t vol_reg   = (uint8_t)(0x08u + c_shifted);
 
     if (c_shifted == 0u) {
-        /* Canal A: envelope mode con period calculado desde nota */
-        /* period = nota_period × 16 → envolvente audible de ~1 nota */
-        uint16_t env_period = (uint16_t)(period * 2u);
-        wrtpsg(0x0Bu, (uint8_t)(env_period & 0xFFu));   /* R11: env period lo */
-        wrtpsg(0x0Cu, (uint8_t)(env_period >> 8));       /* R12: env period hi */
-        wrtpsg(0x0Du, 0x08u);   /* R13: shape=0x08 → attack continuo (sawup) */
         wrtpsg(vol_reg, 0x10u); /* R8: usar envelope (bit4=1) */
+        wrtpsg(0x0Du, 0x00u);   /* R13: shape 0 (decay), re-dispara la rampa */
     } else {
-        /* Canal B: volumen fijo */
         wrtpsg(vol_reg, 0x0Du); /* R9: vol=13 */
     }
 }
@@ -510,7 +497,10 @@ void music_init(void)
     wrtpsg(0x08u, 0x00u);   /* vol A = 0 */
     wrtpsg(0x09u, 0x00u);   /* vol B = 0 */
     wrtpsg(0x0Au, 0x00u);   /* vol C = 0 */
-    wrtpsg(0x0Bu, 0x00u);   /* envelope period lo = 0 */
-    wrtpsg(0x0Cu, 0x00u);   /* envelope period hi = 0 */
-    wrtpsg(0x0Du, 0x08u);   /* envelope shape = attack continuo */
+    /* R11/R12: estado que deja el BIOS MSX en el arranque (leído del PSG
+     * emulado en openMSX durante el juego: R11=0x00, R12=0x1C) — el juego
+     * cuenta con ese período de envelope y NUNCA lo escribe. */
+    wrtpsg(0x0Bu, 0x00u);
+    wrtpsg(0x0Cu, 0x1Cu);
+    wrtpsg(0x0Du, 0x00u);   /* shape 0 (decay), como lo observado in-game */
 }

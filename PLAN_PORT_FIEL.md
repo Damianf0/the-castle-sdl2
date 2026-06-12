@@ -266,9 +266,16 @@ Mapa original (referencia):
   (EAF6+) y tempo por velocidad (62FA) conectados; música in-game real =
   selección de 0x656B (normal 0x78D2/0x7916 = la del título; power-ups
   0x79B7/0x79DE y 0x7964/0x7993); muerte = 0x7A73/0x7A8F tempo 6
-  (sub_5B35/5B56). PENDIENTE de validar: envelope del canal A (el port usa
-  shape 0x08 + período calculado, el real escribe R13=0x00 — comparar con
-  dump PSG), volúmenes/mixer de los 3 tipos de SFX, y el tema de fin/demo.
+  (sub_5B35/5B56).
+- Avance 2026-06-12 (2): PRIMER ORÁCULO PSG (tools/tr_psg.tcl escrituras
+  0xA0/0xA1 + tools/tr_psgregs.tcl registros en vivo). Confirmado: canal A
+  por nota = R8=0x10 + R13=0x00, R11/R12 jamás (BIOS deja 0x1C00 → rampa
+  ~16 s = volumen constante); canal B R9=0x0D; tick cada 6 VBlanks ✓;
+  R7=0xB8 ✓. Corregidos: play_note (era shape 0x08 + período inventado →
+  trémolo) y el envelope del HAL (corría 16× rápido y los shapes 0-7
+  repetían). PENDIENTE de validar: volúmenes/mixer de los 3 tipos de SFX
+  (R4/R5/R6 — capturar con aplastes), tema de fin/demo, y la intro
+  registro a registro (comparación automática port vs oráculo).
 
 ## Orden razonado
 

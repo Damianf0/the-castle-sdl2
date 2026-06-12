@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-06-12 — Sonido (2): envelope real del canal A — primer oráculo PSG
+
+Reportado por el usuario: el sonido salía "lento/distorsionado". Primer
+fixture PSG real (tools/tr_psg.tcl: registra TODAS las escrituras a los
+puertos 0xA0/0xA1 en openMSX durante el juego; tools/tr_psgregs.tcl: lee
+el estado de los 16 registros en vivo):
+
+- **Oráculo**: por nota el canal A escribe solo R0/R1 + R8=0x10 + R13=0x00;
+  el canal B R2/R3 + R9=0x0D. **R11/R12 no se escriben NUNCA** (quedan los
+  del BIOS: 0x1C00 → paso de envelope de ~1 s: con shape 0 la nota suena a
+  volumen lleno constante y el R13 de cada nota re-dispara la rampa).
+  Tick musical: cada 6 VBlanks (EAF3=6 ✓), nota típica 200 ms. R7=0xB8.
+  (Las 25k escrituras a R15 son el escaneo de joystick del busy-wait.)
+- **Distorsión cazada**: el port inventaba R11/R12=período×2 + shape 0x08
+  (sawtooth repetido) → trémolo audible de ~13 Hz en la melodía. Ahora
+  play_note replica el oráculo y music_init deja R11/R12 = 0x00/0x1C.
+- **Bugs del envelope en el HAL**: corría 16× rápido (un paso del AY son
+  256×EP ciclos y la rampa 16 pasos = 4096×EP) y los shapes sin bit de
+  continue (0-7) repetían en vez de terminar en 0 y quedarse.
+- El tempo medido confirma el modelo del tick (6/4/2 según velocidad).
+
 ## 2026-06-12 — Sonido: música de juego CORRECTA, SFX conectados, jingle de muerte
 
 Diagnóstico (el reproductor nunca se validó contra el real — eso sigue
