@@ -333,6 +333,7 @@ void faithful_play(uint8_t start_room)
                 items_room_init(room);
             }
         }
+        player_traps_frame();  /* sub_4406: trampas 0x1F antes de los BATs */
         player_bats_frame();   /* sub_438D: enemigos DESPUÉS del jugador */
         if (player_check_death()) {            /* sub_5A2D */
             player_death_run();                /* sub_5A63 */
@@ -553,11 +554,61 @@ int main(int argc, char *argv[])
                 fprintf(f, "\n");
                 player_elev_frame();
                 player_coll_frame();
+                player_traps_frame();
                 player_bats_frame();
                 player_end_frame();
             }
             fclose(f);
             printf("CASTLE_BATTRACE: sala 0x%02X, %d frames -> %s\n", room, nframes, bt);
+            free(rom_buf);
+            return 0;
+        }
+    }
+
+    /* --- Modo traza de ESTRUCTURALES e43e (sin SDL): CASTLE_E43TRACE=out.txt
+     * + CASTLE_ROOM (hex) + CASTLE_FRAMES (+CASTLE_PCOL/PROW). Corre los
+     * motores reales (442D/434A/4406/438D) con el jugador fijado y vuelca
+     * por frame los 16 slots e43e (tipo:col,fila,f3/estado) — comparable
+     * contra tests/fixtures/e43e_tr/ (trazas de tools/tr_e43e.tcl). */
+    {
+        const char *et = getenv("CASTLE_E43TRACE");
+        if (et) {
+            uint8_t room = 0x70u;
+            int nframes = 300;
+            const char *rs = getenv("CASTLE_ROOM");
+            const char *nf = getenv("CASTLE_FRAMES");
+            const char *pc = getenv("CASTLE_PCOL"), *pr = getenv("CASTLE_PROW");
+            FILE *f = fopen(et, "w");
+            if (rs) room = (uint8_t)strtol(rs, NULL, 16);
+            if (nf) nframes = atoi(nf);
+            if (!f) { free(rom_buf); return 1; }
+            g_rom = rom_buf; g_rom_size = rom_size;
+            rl_reset();
+            rl_load_room(room);
+            for (int i = 0; i < nframes; i++) {
+                if (pc) rl_ram_wb(0xE334u, (uint8_t)atoi(pc));
+                if (pr) rl_ram_wb(0xE335u, (uint8_t)atoi(pr));
+                fprintf(f, "%d", i);
+                for (int s = 0; s < 16; s++) {
+                    uint16_t ix = (uint16_t)(0xE43Eu + s * 5u);
+                    if (rl_ram_rb(ix)) {
+                        fprintf(f, " %d:%02X,%d,%d,%d/s%02X", s,
+                                rl_ram_rb(ix),
+                                rl_ram_rb((uint16_t)(ix + 1u)),
+                                rl_ram_rb((uint16_t)(ix + 2u)),
+                                rl_ram_rb((uint16_t)(ix + 3u)),
+                                rl_ram_rb((uint16_t)(ix + 4u)));
+                    }
+                }
+                fprintf(f, "\n");
+                player_elev_frame();
+                player_coll_frame();
+                player_traps_frame();
+                player_bats_frame();
+                player_end_frame();
+            }
+            fclose(f);
+            printf("CASTLE_E43TRACE: sala 0x%02X, %d frames -> %s\n", room, nframes, et);
             free(rom_buf);
             return 0;
         }
@@ -684,6 +735,7 @@ int main(int argc, char *argv[])
                             printf(">>> f%02d transicion a sala 0x%02X\n", f, room);
                         }
                     }
+                    player_traps_frame();
                     player_bats_frame();
                     if (player_check_death())
                         printf(">>> f%02d MUERTE por contacto\n", f);

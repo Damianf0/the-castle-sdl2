@@ -245,6 +245,40 @@ def run(results):
     check('enemigos BAT (trazas frame a frame; %d salas pendientes de '
           'ascensores)' % len(BATS_PENDING), t_bats)
 
+    # --- 6d. estructurales e43e vs trazas-oráculo (Fase 4) ---------------------
+    # CASTLE_E43TRACE corre los motores reales (442D: cintas/fuego/ascensores
+    # + 4406: trampas 0x1F) con el jugador fijado y debe reproducir frame a
+    # frame los 16 slots e43e (tipo,col,fila,f3,estado) de openMSX
+    # (tools/gen_e43e_fixtures.py + tools/tr_e43e.tcl).
+    def t_e43e():
+        import glob as _g
+        errs = []
+        for bf in sorted(_g.glob(os.path.join(FIX, 'e43e_tr', 'e43e_tr_*.txt'))):
+            lines = open(bf).read().splitlines()
+            hdr = lines[0].split()        # "# room XX pcol P prow R"
+            xx, pcol, prow = hdr[2], hdr[4], hdr[6]
+            out = os.path.join(tempfile.gettempdir(), 'e43etrace_%s.txt' % xx)
+            env = dict(os.environ, CASTLE_E43TRACE=out, CASTLE_ROOM=xx,
+                       CASTLE_FRAMES=str(len(lines) - 1),
+                       CASTLE_PCOL=pcol, CASTLE_PROW=prow)
+            r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
+                               text=True, timeout=60)
+            if r.returncode != 0 or not os.path.exists(out):
+                errs.append('sala %s: exe falló' % xx)
+                continue
+            want = [l for l in lines[1:] if l.strip()]
+            got = [l for l in open(out).read().splitlines() if l.strip()]
+            os.remove(out)
+            n = min(len(want), len(got))
+            bad = sum(1 for i in range(n) if want[i] != got[i])
+            if bad:
+                first = next(i for i in range(n) if want[i] != got[i])
+                errs.append('sala %s: %d/%d frames difieren (primero f%d:\n'
+                            '  oráculo %s\n  port    %s)' %
+                            (xx, bad, n, first, want[first], got[first]))
+        return errs
+    check('estructurales e43e (cintas/fuego/ascensores/trampas 0x1F)', t_e43e)
+
     # --- 7. título vs oráculo -------------------------------------------------
     # CASTLE_TITLEDUMP corre la intro real (rápido) y vuelca la VRAM en el
     # mismo momento que tools/cap_title.tcl capturó la del juego real en

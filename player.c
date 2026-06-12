@@ -1119,21 +1119,145 @@ static void s_elev_draw(uint16_t ix, uint8_t t)
     }
 }
 
-/* sub_442D: driver de la tabla e43e (16 slots de 5 bytes). Los ascensores
- * solo actúan cada 8 frames (EAC9&7==0). */
+/* sub_72F4/72F8: tira horizontal animada de 2*len celdas — deltas
+ * [d0, (d1,d2)×(len-1), d3] desde la tabla ROM `tbl` + fase*4. */
+static void s_72F4(uint16_t tbl, uint8_t phase, uint8_t code,
+                   uint8_t h, uint8_t l, uint8_t len)
+{
+    uint16_t p = (uint16_t)(tbl + phase * 4u);
+    uint8_t i;
+    rl_cell_put(h, l, code, rom_rb_p(p), 0u);
+    for (i = 1u; i < len; i++) {
+        rl_cell_put((uint8_t)(h + i * 2u - 1u), l, code,
+                    rom_rb_p((uint16_t)(p + 1u)), 0u);
+        rl_cell_put((uint8_t)(h + i * 2u), l, code,
+                    rom_rb_p((uint16_t)(p + 2u)), 0u);
+    }
+    rl_cell_put((uint8_t)(h + len * 2u - 1u), l, code,
+                rom_rb_p((uint16_t)(p + 3u)), 0u);
+}
+
+/* sub_442D: driver de la tabla e43e (16 slots de 5 bytes).
+ *   0x0C/0x0D = cintas (tira animada por EAC9&3, 0x0D con la fase
+ *   invertida; mismo tileset, 6A7C mapea 0x0D→0x0C), cada frame.
+ *   0x0F = fuego intermitente: 32 frames de tira animada (tabla 0x7802) y
+ *   32 frames (EAC9 bit5) escribiendo colmap=0x10 (letal) + E6EE=0.
+ *   0x1C/0x1D = ascensores, solo cada 8 frames (EAC9&7==0).
+ *   (0x1B NO va acá: lo dispara la trampa COLL 0x34 vía sub_61F5.) */
 void player_elev_frame(void)
 {
     uint16_t hl = 0xE43Eu;
-    uint8_t s;
+    uint8_t s, fc = rr(0xEAC9u);
     for (s = 0u; s < 16u; s++, hl += 5u) {
         uint8_t t = rr(hl);
-        if (t != 0x1Cu && t != 0x1Du) continue;
-        if (rr(0xEAC9u) & 0x07u) continue;
-        wr((uint16_t)(hl + 4u),
-           s_4611(rr((uint16_t)(hl + 4u)), rr((uint16_t)(hl + 1u)),
-                  rr((uint16_t)(hl + 2u)), (t == 0x1Cu) ? 1u : 2u));
-        s_elev_draw(hl, t);
+        uint8_t h = rr((uint16_t)(hl + 1u));
+        uint8_t l = rr((uint16_t)(hl + 2u));
+        uint8_t n = rr((uint16_t)(hl + 3u));
+        switch (t) {
+        case 0x0Cu:
+            s_72F4(0x77F2u, (uint8_t)(fc & 0x03u), 0x0Cu, h, l, n);
+            break;
+        case 0x0Du:
+            s_72F4(0x77F2u, (uint8_t)(3u - (fc & 0x03u)), 0x0Du, h, l, n);
+            break;
+        case 0x0Fu:
+            if (fc & 0x20u) {              /* fase letal (sub_7341) */
+                uint16_t off = (uint16_t)(0xE496u + l * 30u + h);
+                uint8_t i, w = (uint8_t)(n * 2u);
+                for (i = 0u; i < w; i++) {
+                    wr((uint16_t)(off + i), 0x10u);
+                    wr((uint16_t)(off + 0x258u + i), 0u);
+                }
+            } else {
+                s_72F4(0x7802u, (uint8_t)(fc & 0x03u), 0x0Fu, h, l, n);
+            }
+            break;
+        case 0x1Cu:
+        case 0x1Du:
+            if (fc & 0x07u) break;
+            wr((uint16_t)(hl + 4u),
+               s_4611(rr((uint16_t)(hl + 4u)), h, l, (t == 0x1Cu) ? 1u : 2u));
+            s_elev_draw(hl, t);
+            break;
+        default: break;
+        }
     }
+}
+
+/* ==========================================================================
+ * TRAMPAS MÓVILES 0x1F (sub_4406): pinchos deslizantes de 2 celdas que
+ * patrullan horizontalmente. Estado: bit0=activa, bit1=va a la derecha.
+ * Pasada 1 = cerebro (solo frames PARES), pasada 2 = drawer (cada frame:
+ * par avanza con transición deltas 2-4, impar asienta deltas 0-1 +
+ * blanqueo de la celda dejada).
+ * ========================================================================== */
+
+/* sub_47B8 + sub_47EA: rebote por probes &0x30 (49D4) en col+2 y col-1;
+ * fuera de tablero (>0x1D con wrap) bloquea. Encerrada → se desactiva. */
+static uint8_t s_47B8(uint8_t a, uint8_t b, uint8_t c)
+{
+    uint8_t p;
+    if (!(a & 0x01u)) return a;
+    if (rr(0xEAC9u) & 0x01u) return a;          /* sub_5D5D: solo pares */
+    p = (uint8_t)(b + 2u);
+    if (p > 0x1Du || (cm(p, c) & 0x30u)) {      /* derecha bloqueada */
+        p = (uint8_t)(b - 1u);
+        if (p > 0x1Du || (cm(p, c) & 0x30u))
+            a &= (uint8_t)~0x01u;               /* encerrada: RES 0 */
+        else
+            a &= (uint8_t)~0x02u;               /* rebota a la izquierda */
+    } else {
+        p = (uint8_t)(b - 1u);
+        if (p > 0x1Du || (cm(p, c) & 0x30u))
+            a |= 0x02u;                         /* rebota a la derecha */
+    }
+    return a;
+}
+
+/* sub_7494: drawer/movedor de la 0x1F */
+static void s_7494(uint16_t ix)
+{
+    uint8_t h = rr((uint16_t)(ix + 1u)), l = rr((uint16_t)(ix + 2u));
+    uint8_t st = rr((uint16_t)(ix + 4u));
+    uint8_t fc = rr(0xEAC9u);
+    if (!(st & 0x01u)) return;
+    if (st & 0x02u) {                           /* hacia la derecha */
+        if (!(fc & 0x01u)) {                    /* par: col++ y transición */
+            wr((uint16_t)(ix + 1u), (uint8_t)(h + 1u));
+            rl_cell_put(h, l, 0x1Fu, 2u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), l, 0x1Fu, 3u, 0u);
+            rl_cell_put((uint8_t)(h + 2u), l, 0x1Fu, 4u, 0u);
+        } else {                                /* impar: blanqueo + final */
+            rl_cell_put((uint8_t)(h - 1u), l, 0u, 0u, 0u);
+            rl_cell_put(h, l, 0x1Fu, 0u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), l, 0x1Fu, 1u, 0u);
+        }
+    } else {                                    /* hacia la izquierda */
+        if (!(fc & 0x01u)) {
+            h--; wr((uint16_t)(ix + 1u), h);
+            rl_cell_put(h, l, 0x1Fu, 2u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), l, 0x1Fu, 3u, 0u);
+            rl_cell_put((uint8_t)(h + 2u), l, 0x1Fu, 4u, 0u);
+        } else {
+            rl_cell_put(h, l, 0x1Fu, 0u, 0u);
+            rl_cell_put((uint8_t)(h + 1u), l, 0x1Fu, 1u, 0u);
+            rl_cell_put((uint8_t)(h + 2u), l, 0u, 0u, 0u);
+        }
+    }
+}
+
+/* sub_4406: dos pasadas sobre e43e — cerebros 0x1F y luego drawers */
+void player_traps_frame(void)
+{
+    uint16_t hl;
+    uint8_t s;
+    for (s = 0u, hl = 0xE43Eu; s < 16u; s++, hl += 5u)
+        if (rr(hl) == 0x1Fu)
+            wr((uint16_t)(hl + 4u),
+               s_47B8(rr((uint16_t)(hl + 4u)), rr((uint16_t)(hl + 1u)),
+                      rr((uint16_t)(hl + 2u))));
+    for (s = 0u, hl = 0xE43Eu; s < 16u; s++, hl += 5u)
+        if (rr(hl) == 0x1Fu) s_7494(hl);
 }
 
 /* ==========================================================================

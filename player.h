@@ -40,10 +40,15 @@ uint8_t player_take_exit(void);
  * sprite (sub_6F45 + sub_6F27 con frame 0). */
 void player_sync_pixel(void);
 
-/* sub_442D: motor por frame de los ASCENSORES (e43e tipos 0x1C/0x1D, cada
- * 8 frames): mueven su piso por el colmap, cargan al jugador/bloques y
- * aplastan. Llamar ANTES de player_coll_frame (orden del game loop real). */
+/* sub_442D: motor por frame de los estructurales e43e: cintas 0x0C/0x0D,
+ * fuego intermitente 0x0F (cada frame) y ASCENSORES 0x1C/0x1D (cada 8
+ * frames: mueven su piso por el colmap, cargan al jugador/bloques y
+ * aplastan). Llamar ANTES de player_coll_frame (orden del game loop real). */
 void player_elev_frame(void);
+
+/* sub_4406: trampas móviles 0x1F (pinchos deslizantes de 2 celdas).
+ * Llamar DESPUÉS de player_frame y ANTES de player_bats_frame. */
+void player_traps_frame(void);
 
 /* sub_434A: motor por frame de los objetos COLL (bloques empujables con
  * gravedad y derrape por rampas, trampas 0x34). Llamar ANTES de

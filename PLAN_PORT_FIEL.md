@@ -188,9 +188,28 @@ recursivo encima + sub_7575 redibuja 2x2 una fila arriba; techo → 5D47).
 El colmap por delta sale del ROM vía 5E80 (0x1B-0x1E: tabla 0x77B6):
 superficie=piso, cadenas no. Salas 29/81 frame-exactas 301/301.
 
-Pendiente de la fase: partículas sub_61F5/5D63, escaleras, pickup por
-celda, tipos 0x0C/0x0D/0x0F de 442D (sub_72CA/72DD/7326) y 0x1F de
-sub_4406 (sub_47B8/7494, trampas estructurales).
+**Estructurales e43e ✅ COMPLETOS (2026-06-12)** — suite `e43e` nueva
+(CASTLE_E43TRACE vs tools/tr_e43e.tcl, 8 salas × 301 frames exactos):
+- 442D completo: cintas 0x0C/0x0D (tira animada 2×len, deltas
+  [d0,(d1,d2)×(len-1),d3] de la tabla ROM 0x77F2 + fase EAC9&3, 0x0D
+  invierte la fase y 6A7C mapea su tileset a 0x0C) y FUEGO 0x0F (32
+  frames de tira animada tabla 0x7802 / 32 frames con EAC9 bit5: colmap
+  0x10 letal + E6EE=0, sin redibujar).
+- 4406 ✅: trampas 0x1F (pinchos deslizantes 2 celdas, siempre f3=1
+  estado=01 en los datos): cerebro 47B8 solo frames pares (probes &0x30
+  en col+2/col-1 con borde >0x1D; encerrada → RES 0 = muere), drawer
+  7494 cada frame (par: avanza col y dibuja transición deltas 2-4;
+  impar: asienta deltas 0-1 y blanquea la celda dejada).
+- OJO nombres viejos: "escaleras" NO es una mecánica del jugador (solo
+  40BB y la pausa leen el stick 0xEACB; no hay trepado) — el bloque
+  0x4586 ya se portó con los BATs.
+
+Pendiente de la fase: tipo 0x1B (móvil vertical 2 celdas, 6 salas:
+01/07/23/38/41/43, nace estado=0 INERTE): lo dispara la trampa COLL 0x34
+vía sub_61F5 (A=4 abajo / 0x0C arriba según bit1, chequea pisada con
+4A38&0x10) → sub_735F (cerebro sub_474E + drawer 738B/739C, tiles 0x1B
+deltas 2-10) — leer 474E completo (4770-47B7) antes de portar. Y las
+partículas visuales (sub_5D63 puff de sprites, 0xEAF9/61F5-area).
 
 Mapa original (referencia):
 - Driver `sub_438D`: tabla 0xE416 (8 slots). Pasada 1: cerebro `sub_43BF`

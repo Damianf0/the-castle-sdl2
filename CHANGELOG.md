@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-06-12 — Fase 4: estructurales e43e COMPLETOS (cintas, fuego, trampas 0x1F)
+
+- **442D terminado**: cintas transportadoras 0x0C/0x0D (tira animada de
+  2×len celdas con deltas de la tabla ROM 0x77F2, fase EAC9&3 — la 0x0D
+  va al revés) y fuego intermitente 0x0F: 32 frames de animación (tabla
+  0x7802) y 32 frames letales (EAC9 bit5: colmap=0x10 sin redibujar).
+- **4406 portado**: trampas 0x1F — pinchos deslizantes de 2 celdas que
+  patrullan horizontal (1 celda cada 2 frames), rebotan contra sólidos
+  y se DESACTIVAN si quedan encerradas. Cerebro en frames pares, drawer
+  cada frame (transición deltas 2-4 / final 0-1 + blanqueo).
+- **Suite nueva `estructurales e43e`**: CASTLE_E43TRACE (port) contra
+  tools/tr_e43e.tcl + gen_e43e_fixtures.py (openMSX): los 16 slots e43e
+  (tipo,col,fila,f3,estado) frame a frame — 8 salas (00/02/03/06/16/33/
+  36/42) × 301 frames EXACTOS al primer intento. 13/13 suites.
+- Aclarado: "escaleras" de las notas viejas no existe como mecánica (el
+  jugador no lee arriba/abajo del stick); era el bloque 0x4586 (ya en
+  los BATs). Queda de la fase: tipo 0x1B (móvil vertical inerte que
+  dispara la trampa COLL 0x34 vía sub_61F5/735F/474E) y las partículas.
+
 ## 2026-06-12 — Sonido (2): envelope real del canal A — primer oráculo PSG
 
 Reportado por el usuario: el sonido salía "lento/distorsionado". Primer
