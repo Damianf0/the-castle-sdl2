@@ -19,6 +19,10 @@ extern int g_plr_frame;   /* frame de animacion 0..9 (patron sprite = f*12) */
  * El poll real solo toma efecto en frames pares (30Hz). */
 void player_frame(uint8_t stick, uint8_t trig);
 
+/* Incremento del contador de frame 0xEAC9 (40AF) — llamar al FINAL del
+ * frame completo (tras bloques/bats/daño, que comparten la paridad). */
+void player_end_frame(void);
+
 /* Devuelve y CONSUME el borde de salida (0xEAE1): 0=no, 1=arriba, 3=der,
  * 5=abajo, 7=izq. */
 uint8_t player_take_exit(void);
@@ -31,5 +35,18 @@ void player_sync_pixel(void);
  * gravedad y derrape por rampas, trampas 0x34). Llamar ANTES de
  * player_frame en cada frame (orden del game loop real). */
 void player_coll_frame(void);
+
+/* sub_438D: motor por frame de los ENEMIGOS (tabla BAT 0xE416): cerebros
+ * por tipo + movedor con animación. Llamar DESPUÉS de player_frame. */
+void player_bats_frame(void);
+
+/* sub_5A2D: detección de contacto letal (frames impares, 4 celdas del
+ * cuerpo, invulnerable con el power-up 0xE343). 1 = murió. */
+int player_check_death(void);
+
+/* sub_5A63: secuencia de muerte (bloqueante, consume frames con vsync):
+ * agonía + caída + vidas-- + commit + EAE0=1. Tras llamar: si quedan vidas
+ * (0xE324), limpiar 0xEAE0 y recargar la sala (respawn en la entrada). */
+void player_death_run(void);
 
 #endif

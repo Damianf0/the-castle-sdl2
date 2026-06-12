@@ -939,6 +939,9 @@ void rl_cell_put(uint8_t h, uint8_t l, uint8_t c, uint8_t d, uint8_t e)
     s_6A7C(h, l, c, d, e);
 }
 
+/* sub_6134 expuesto (lo usa la secuencia de muerte) */
+void rl_persist_commit(void) { s_6134(); }
+
 /* ===== sub_4325 + sub_758C: puerta presionada por el jugador ===== */
 int rl_door_press(uint8_t b, uint8_t c)
 {

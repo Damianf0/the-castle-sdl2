@@ -31,7 +31,6 @@
 #include "game.h"
 #include "geom.h"
 #include "actors.h"
-#include "enemies_port.h"
 #include "keys_port.h"
 #include "items_port.h"
 #include "doors_port.h"
@@ -307,20 +306,17 @@ void faithful_play(uint8_t start_room)
     geom_decode_room(room);
     rl_load_room(room);        /* sala desde el ROM: VRAM + tablas (sub_64DD) */
     player_sync_pixel();       /* sub_6F45 + sub_6F27 (cierre real de sub_64DD) */
-    enemies_room_init(room);
     keys_room_init(room);
     items_room_init(room);
-    g_actors_on = 1;   /* overlay de enemigos sobre el render del VDP */
+    g_actors_on = 1;
 
-    /* El JUGADOR es el real (player.c = sub_40BB + sub_6F5C, validado contra
-     * las trazas): colisión por el colmap del loader, puertas por
-     * rl_door_press (sub_4325/758C), transición por rl_room_exit (sub_5053 +
-     * commit de persistencia sub_6134), sprite por el VDP (planos 8-10).
-     * Maqueta restante: enemigos path-replay (Fase 4), pickup AABB (los
-     * efectos reales son Fase 5), sin daño ni empuje de bloques todavía
-     * (sub_4406 / sub_4273 — Fases 4-5). */
+    /* MOTOR FIEL completo: jugador (sub_40BB+6F5C), bloques (sub_434A),
+     * ENEMIGOS reales (sub_438D: cerebros + movedor por celdas — el
+     * path-replay murió), daño por contacto (sub_5A2D) con muerte/respawn
+     * (sub_5A63), puertas (sub_4325/758C), transiciones (sub_5053).
+     * Maqueta restante: pickup AABB (efectos reales = Fase 5). */
     while (hal_poll_events()) {
-        player_coll_frame();   /* sub_434A: bloques (gravedad/empuje) ANTES del jugador */
+        player_coll_frame();   /* sub_434A: bloques ANTES del jugador */
         player_frame(hal_joystick_read(0), hal_key_pressed() ? 1u : 0u);
         {
             uint8_t edge = player_take_exit();
@@ -330,14 +326,24 @@ void faithful_play(uint8_t start_room)
                 geom_decode_room(room);
                 rl_load_room(room);
                 player_sync_pixel();
-                enemies_room_init(room);
                 keys_room_init(room);
                 items_room_init(room);
             }
         }
-        enemies_step();
+        player_bats_frame();   /* sub_438D: enemigos DESPUÉS del jugador */
+        if (player_check_death()) {            /* sub_5A2D */
+            player_death_run();                /* sub_5A63 */
+            if (rl_ram_rb(0xE324u) == 0u) break;   /* game over → título */
+            rl_ram_wb(0xEAE0u, 0u);
+            geom_decode_room(room);
+            rl_load_room(room);                /* respawn en el punto de entrada */
+            player_sync_pixel();
+            keys_room_init(room);
+            items_room_init(room);
+        }
         keys_update(g_plr_px, g_plr_py, 16, 16);
         items_update(g_plr_px, g_plr_py, 16, 16);
+        player_end_frame();    /* 40AF: cierre del frame (paridad compartida) */
         hal_wait_vsync();
     }
     g_actors_on = 0;
@@ -481,9 +487,67 @@ int main(int argc, char *argv[])
                 }
                 player_coll_frame();   /* sub_434A: antes del jugador, como el loop real */
                 player_frame(stick, trig);
+                player_end_frame();
             }
             fclose(f);
             printf("CASTLE_PTRACE: %d lineas -> %s\n", n + 1, pt);
+            free(rom_buf);
+            return 0;
+        }
+    }
+
+    /* --- Modo traza de ENEMIGOS (Fase 4, sin SDL): CASTLE_BATTRACE=out.txt
+     * + CASTLE_ROOM (hex) + CASTLE_FRAMES. Corre el motor BAT real con el
+     * jugador quieto en el spawn y vuelca por frame las posiciones de los 8
+     * slots — comparable contra tests/fixtures/bats/ (trazas openMSX de
+     * tools/tr_bats.tcl, generadas con tools/gen_bats_fixtures.py). */
+    {
+        const char *bt = getenv("CASTLE_BATTRACE");
+        if (bt) {
+            uint8_t room = 0x70u;
+            int nframes = 200;
+            const char *rs = getenv("CASTLE_ROOM");
+            const char *nf = getenv("CASTLE_FRAMES");
+            FILE *f = fopen(bt, "w");
+            if (rs) room = (uint8_t)strtol(rs, NULL, 16);
+            if (nf) nframes = atoi(nf);
+            if (!f) { free(rom_buf); return 1; }
+            g_rom = rom_buf; g_rom_size = rom_size;
+            rl_reset();
+            rl_load_room(room);
+            /* CASTLE_PCOL/PROW: fija al jugador (para validar perseguidores
+             * contra una traza openMSX con el jugador en la misma celda) */
+            const char *pc = getenv("CASTLE_PCOL"), *pr = getenv("CASTLE_PROW");
+            const char *cd = getenv("CASTLE_CELLDBG"); /* "col0,col1,fila0,fila1" */
+            int db0 = 0, db1 = 0, dc0 = 0, dc1 = 0;
+            if (cd) sscanf(cd, "%d,%d,%d,%d", &db0, &db1, &dc0, &dc1);
+            for (int i = 0; i < nframes; i++) {
+                if (pc) rl_ram_wb(0xE334u, (uint8_t)atoi(pc));
+                if (pr) rl_ram_wb(0xE335u, (uint8_t)atoi(pr));
+                fprintf(f, "%d", i);
+                for (int s = 0; s < 8; s++) {
+                    uint16_t ix = (uint16_t)(0xE416u + s * 5u);
+                    if (rl_ram_rb(ix)) {
+                        fprintf(f, " %d:%d,%d", s,
+                                rl_ram_rb((uint16_t)(ix + 2u)),
+                                rl_ram_rb((uint16_t)(ix + 3u)));
+                        if (cd) fprintf(f, "/f%02X", rl_ram_rb((uint16_t)(ix + 4u)));
+                    }
+                }
+                if (cd) {
+                    fprintf(f, " |");
+                    for (int c = dc0; c <= dc1; c++)
+                        for (int b = db0; b <= db1; b++)
+                            fprintf(f, " %d,%d=%02X", b, c,
+                                    rl_ram_rb((uint16_t)(0xE496u + c * 30 + b)));
+                }
+                fprintf(f, "\n");
+                player_coll_frame();
+                player_bats_frame();
+                player_end_frame();
+            }
+            fclose(f);
+            printf("CASTLE_BATTRACE: sala 0x%02X, %d frames -> %s\n", room, nframes, bt);
             free(rom_buf);
             return 0;
         }
@@ -573,7 +637,6 @@ int main(int argc, char *argv[])
                 rl_reset();
                 rl_load_room(room);
                 player_sync_pixel();
-                enemies_room_init(room);
                 keys_room_init(room);
                 items_room_init(room);
                 if (getenv("CASTLE_GIVEKEYS")) {
@@ -605,15 +668,17 @@ int main(int argc, char *argv[])
                             geom_decode_room(room);
                             rl_load_room(room);
                             player_sync_pixel();
-                            enemies_room_init(room);
                             keys_room_init(room);
                             items_room_init(room);
                             printf(">>> f%02d transicion a sala 0x%02X\n", f, room);
                         }
                     }
-                    enemies_step();
+                    player_bats_frame();
+                    if (player_check_death())
+                        printf(">>> f%02d MUERTE por contacto\n", f);
                     keys_update(g_plr_px, g_plr_py, 16, 16);
                     items_update(g_plr_px, g_plr_py, 16, 16);
+                    player_end_frame();
                     hal_vdp_present();
                     {
                         char p[256];

@@ -54,4 +54,8 @@ void rl_keys_hud_redraw(void);
  * objetos COLL (player.c): bloques empujados, gravedad, blanqueos. */
 void rl_cell_put(uint8_t h, uint8_t l, uint8_t c, uint8_t d, uint8_t e);
 
+/* sub_6134 expuesto: committea el estado de las 4 tablas a los bitfields
+ * (lo usa la secuencia de muerte además de rl_room_exit). */
+void rl_persist_commit(void);
+
 #endif

@@ -1,5 +1,52 @@
 # Changelog
 
+## 2026-06-12 — Fase 4: motor BAT real (enemigos vivos) + suite de fixtures
+
+### sub_438D/43BF/719D + cerebros portados (player.c)
+Los enemigos (tabla BAT 0xE416, 8 slots) corren con el motor real:
+- **Driver** (sub_438D): pase 1 = cerebro por slot (solo frames PARES);
+  pase 2 = cerebro de nuevo si field4&5 y MOVEDOR siempre.
+- **Cerebros por tipo** (sub_43BF): 0x36 trampa-murciélago (sub_7279, ciclo
+  de 64 frames: colgar/aletear/volar/recolgarse), 0x37 volador perseguidor
+  4-direcciones (sub_4901), 0x38 caminador-perseguidor que TREPA en la
+  columna del jugador (sub_48AD), 0x39 patrulla con gravedad (sub_4882),
+  0x3A/0x3B rebote simple (sub_4872/487A → sub_45AD).
+- **Movedor** (sub_719D): 2 fases como los bloques — frame impar dibujo
+  final + blanqueo del rastro por dirección; frame par celda nueva +
+  transición 3x2/2x3. Caída/subida bloqueada → el BAT MUERE (slot=0,
+  blanqueo 2x2, puff 0xEAF6=0x32) — los kamikazes son fieles.
+- **Daño y muerte** (sub_5A2D/5AF8/5A63): contacto en frames impares por
+  las 4 celdas del cuerpo (bit 0x10 del colmap; saltar esquiva los de
+  abajo, 0xE344 los de arriba, 0xE343 = invulnerable), secuencia de muerte
+  bloqueante (agonía + caída + vidas-- + commit de persistencia + respawn).
+- `player_end_frame()` separado: EAC9++ va al FINAL del frame completo
+  (40AF) — bloques/jugador/bats comparten la paridad del mismo frame.
+
+### Bug real encontrado contra el oráculo
+En sub_4901 (volador): con "abajo bloqueado, arriba libre, jugador dentro
+de ±8", el original solo SUBE si el jugador está ARRIBA (49A2: JP Z/JP C →
+horizontal); el port subía con el jugador abajo. Con el fix, la sala 0x98
+(4 voladores apilándose contra el jugador) es frame-exacta 301/301 vs
+openMSX.
+
+### Validación: suite `bats` nueva (fixtures frescos de openMSX)
+- `tools/tr_bats.tcl` + `tools/gen_bats_fixtures.py`: warp a la sala con
+  el jugador FIJADO en una celda libre (invulnerable) y traza de los 8
+  slots por frame → `tests/fixtures/bats/bats_XX.txt` (10 salas, todos los
+  tipos). El harness corre CASTLE_BATTRACE (+CASTLE_PCOL/PROW) y exige
+  igualdad frame a frame: **8/10 salas exactas 301/301**; 29 y 81 quedan
+  pendientes del motor de ASCENSORES (e43e 0x1D escribe piso en el colmap
+  y extiende las patrullas — sub_4406/442D, Fase 4 restante).
+- Sala 0x49 probada en openMSX: la trampa colgante 0x35 CAE al cargar la
+  sala y aterriza en (20,14) — el BAT rebota contra ella en col 18, igual
+  que el port. El path legacy (rebote en 22) era un artefacto de captura.
+- Retirado el path-replay legacy: enemies_paths.c/h y enemies_port.c/h
+  borrados (+draw_enemies/blit_cell16 en hal, AABB viejo en actors.c);
+  faithful_play usa player_bats_frame desde el switchover. Exe 188→174 KB.
+
+Harness: 13/13 suites (loader 700/700, vdp, jugador 6/6, bats 8/8+2
+pendientes, título, smoke).
+
 ## 2026-06-11 (6) — Motor COLL real: bloques empujables con gravedad
 
 ### sub_434A + sub_4820 + sub_710B + sub_4273 portados (player.c)

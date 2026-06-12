@@ -592,6 +592,447 @@ static uint8_t s_4273(uint8_t b, uint8_t c, int dir)
     }
 }
 
+/* ==========================================================================
+ * MOTOR BAT (enemigos, tabla 0xE416): sub_438D (driver) + sub_43BF (cerebro
+ * por tipo) + sub_719D (movedor con animacion por direccion).
+ * Deltas de tile del alocador (28/40 por enemigo): 0-3 final-A, 4-7 final-B
+ * (variante por bit1), 8-11/18-21 idle aleteo, 0x0C trans-izq, 0x16
+ * trans-der, 0x1C trans-abajo, 0x22 trans-arriba. Los que chocan techo o
+ * piso en vertical MUEREN (slot=0 + blank + puff sub_5D63).
+ * ========================================================================== */
+
+/* sub_4502: par horizontal &0x20 en (b,c),(b+1,c); fila>0x13 = libre.
+ * NZ(1) = bloqueado/piso presente. */
+static uint8_t p_4502(uint8_t b, uint8_t c)
+{
+    if (c > 0x13u) return 0;
+    if (cm(b, c) & 0x20u) return 1;
+    if (cm((uint8_t)(b + 1u), c) & 0x20u) return 1;
+    return 0;
+}
+/* sub_4566(ap): par horizontal &0x30; fuera de pantalla: ap==0 -> bloqueado,
+ * ap!=0 -> libre. NZ(1)=bloqueado. */
+static uint8_t p_4566(uint8_t ap, uint8_t b, uint8_t c)
+{
+    if (c > 0x13u) return ap ? 0 : 1;
+    if (cm(b, c) & 0x30u) return 1;
+    if (cm((uint8_t)(b + 1u), c) & 0x30u) return 1;
+    return 0;
+}
+/* sub_45D0: posicion del jugador vs columna b: 0 = misma col, 1 = dentro de
+ * +-8 cols, 2 = fuera. */
+static uint8_t p_45D0(uint8_t b)
+{
+    uint8_t pc = rr(0xE334u);
+    if (pc == b) return 0;
+    if (pc > (uint8_t)(b + 8u) && (uint8_t)(b + 8u) >= b) return 2;
+    if (b >= 8u && pc < (uint8_t)(b - 8u)) return 2;
+    return 1;
+}
+/* sub_45EF: B vs col del jugador: -1 = jugador a la DERECHA (carry),
+ * 0 = igual, +1 = jugador a la izquierda. */
+static int p_45EF(uint8_t b)
+{
+    uint8_t pc = rr(0xE334u);
+    if (b == pc) return 0;
+    return (b < pc) ? -1 : 1;
+}
+/* sub_45F8: C vs fila del jugador: -1 = jugador ABAJO (carry), 0 = igual,
+ * +1 = jugador arriba. */
+static int p_45F8(uint8_t c)
+{
+    uint8_t pr = rr(0xE335u);
+    if (c == pr) return 0;
+    return (c < pr) ? -1 : 1;
+}
+
+/* sub_4599 + sub_45AD: rebote horizontal: probes laterales (b+2 / b-1) con
+ * sub_44C2(modo); der libre+izq bloq -> derecha; der bloq+izq libre ->
+ * izquierda; ambos bloq -> parar. */
+static uint8_t s_45AD(uint8_t f, uint8_t mode, uint8_t b, uint8_t c)
+{
+    uint8_t dR = p_44C2(mode, (uint8_t)(b + 2u), c);
+    uint8_t eL = p_44C2(mode, (uint8_t)(b - 1u), c);
+    if (dR == 0u) {
+        if (eL != 0u) f |= 0x02u;
+    } else {
+        if (eL == 0u) f &= (uint8_t)~0x02u;
+        else          f &= (uint8_t)~0x01u;
+    }
+    return f;
+}
+
+/* sub_4882 (tipo 0x39): patrulla horizontal con gravedad; cerca del jugador
+ * usa probes en modo 1 (mas permisivo). */
+static uint8_t br_4882(uint8_t f, uint8_t b, uint8_t c)
+{
+    uint8_t d;
+    if (!p_4502(b, (uint8_t)(c + 2u)))
+        return (uint8_t)((f & ~(0x01u | 0x08u)) | 0x04u);   /* cae */
+    f &= (uint8_t)~0x04u;
+    if (p_45D0(b) == 2u) d = 0u;
+    else { f |= 0x01u; d = 1u; }
+    return s_45AD(f, d, b, c);
+}
+
+/* sub_48AD (tipo 0x38): caminador-perseguidor; en la columna del jugador
+ * SUBE si el techo esta libre. */
+static uint8_t br_48AD(uint8_t f, uint8_t b, uint8_t c)
+{
+    uint8_t prox;
+    if (!p_4502(b, (uint8_t)(c + 2u)))
+        return (uint8_t)((f & ~(0x01u | 0x08u)) | 0x04u);   /* cae */
+    if (!(f & 0x04u) && (f & 0x01u)) {           /* en marcha horizontal */
+        uint8_t d = 0u;
+        if (p_45D0(b) != 2u) {
+            d = 1u;
+            if (p_45F8(c) < 0) d = 2u;           /* jugador abajo */
+        }
+        return s_45AD(f, d, b, c);
+    }
+    prox = p_45D0(b);
+    if (prox == 0u) {                            /* misma columna */
+        f |= 0x04u | 0x08u;                      /* subir */
+        if (p_4502(b, (uint8_t)(c - 1u))) f &= (uint8_t)~0x04u;
+        return f;
+    }
+    f &= (uint8_t)~0x04u;
+    f |= 0x01u;
+    if (prox == 1u) {                            /* dentro de +-8 */
+        uint8_t d = 1u;
+        if (p_45F8(c) < 0) d = 2u;
+        return s_45AD(f, d, b, c);
+    }
+    f &= (uint8_t)~0x01u;                        /* fuera: quieto */
+    return f;
+}
+
+/* sub_4901 (tipo 0x37): volador perseguidor 4-direcciones. Port literal con
+ * los saltos del Z80. l = "ya intente la otra direccion". */
+static uint8_t br_4901(uint8_t f, uint8_t b, uint8_t c)
+{
+    uint8_t h = f, l = 0;
+    uint8_t dR, eL, dD, eU;
+    if (h & 0x04u) goto v495F;
+h490B:
+    h &= (uint8_t)~0x04u; h |= 0x01u; h &= (uint8_t)~0x08u;
+    if (p_45F8(c) >= 0) h |= 0x08u;              /* jugador arriba/igual: subir */
+    dR = p_44C2(2u, (uint8_t)(b + 2u), c);       /* sub_4599 modo 2 */
+    eL = p_44C2(2u, (uint8_t)(b - 1u), c);
+    if (dR == 0u) {
+        if (eL == 0u) goto done;                 /* ambos libres */
+        if (l == 0u) {
+            if (p_45D0(b) != 2u) goto v495E;     /* dentro: probar vertical */
+            h |= 0x02u; goto done;               /* fuera: derecha */
+        }
+        if (p_45EF(b) < 0) { h |= 0x02u; goto done; }
+        goto stop49AD;
+    }
+    if (eL != 0u) {                              /* ambos bloqueados */
+        if (l == 0u) goto v495E;
+        goto stop49AD;
+    }
+    if (l == 0u) {                               /* solo derecha bloqueada */
+        if (p_45D0(b) != 2u) goto v495E;
+        h &= (uint8_t)~0x02u; goto done;         /* fuera: izquierda */
+    }
+    {
+        int r = p_45EF(b);
+        if (r == 0) goto stop49AD;
+        if (r > 0) { h &= (uint8_t)~0x02u; goto done; }
+        goto stop49AD;
+    }
+v495E:
+    l++;
+v495F:
+    h &= (uint8_t)~0x01u; h |= 0x04u; h &= (uint8_t)~0x02u;
+    if (p_45EF(b) < 0) h |= 0x02u;               /* cara hacia el jugador */
+    dD = p_4566(0u, b, (uint8_t)(c + 2u));       /* sub_4586 modo 0 */
+    eU = p_4566(0u, b, (uint8_t)(c - 1u));
+    if (dD == 0u) {
+        if (eU != 0u) {                          /* solo abajo libre */
+            if (p_45D0(b) == 2u) { h &= (uint8_t)~0x08u; goto done; }
+            if (p_45F8(c) >= 0) goto h490B;      /* jugador no-abajo: horizontal */
+            h &= (uint8_t)~0x08u; goto done;     /* bajar */
+        }
+        if (p_45D0(b) == 2u) goto done;          /* ambos libres, lejos: sigue */
+        if (p_45F8(c) != 0) goto done;
+        goto h490B;                              /* misma fila: horizontal */
+    }
+    if (eU != 0u) goto h490B;                    /* ambos bloqueados */
+    if (p_45D0(b) == 2u) { h |= 0x08u; goto done; }   /* lejos: subir */
+    if (p_45F8(c) <= 0) goto h490B;              /* misma fila o jugador abajo */
+    h |= 0x08u; goto done;                       /* jugador arriba: subir (49A8) */
+stop49AD:
+    h &= (uint8_t)~(0x01u | 0x04u);
+done:
+    return h;
+}
+
+/* sub_43BF: cerebro (solo frames PARES) */
+static uint8_t s_43BF(uint16_t ix)
+{
+    uint8_t code = rr((uint16_t)(ix + 1u));
+    uint8_t b = rr((uint16_t)(ix + 2u)), c = rr((uint16_t)(ix + 3u));
+    uint8_t f = rr((uint16_t)(ix + 4u));
+    if (rr(0xEAC9u) & 0x01u) return f;
+    switch (code) {
+        case 0x36u: return f;
+        case 0x37u: return br_4901(f, b, c);
+        case 0x38u: return br_48AD(f, b, c);
+        case 0x39u: return br_4882(f, b, c);
+        default:    return s_45AD(f, 0u, b, c);   /* 0x3A (487A) y 0x3B+ (4872) */
+    }
+}
+
+/* sub_7279: trampa murcielago (0x36): ciclo de 64 frames — cuelga (par de
+ * celdas en l+1, deltas 0-1/2-3), aletea volando (2x2 deltas 4-7/8-11) y
+ * vuelve a colgarse. */
+static void s_7279(uint16_t ix, uint8_t slot)
+{
+    uint8_t h = rr((uint16_t)(ix + 2u)), l = rr((uint16_t)(ix + 3u));
+    uint8_t t = (uint8_t)(rr(0xEAC9u) & 0x3Fu);
+    uint8_t d;
+    if (t < 0x10u) d = 0u;
+    else if (t < 0x18u) d = 2u;
+    else if (t < 0x38u) {
+        d = (t & 0x01u) ? 8u : 4u;
+        rl_cell_put(h, l, 0x36u, d, slot);
+        rl_cell_put((uint8_t)(h + 1u), l, 0x36u, (uint8_t)(d + 1u), slot);
+        rl_cell_put(h, (uint8_t)(l + 1u), 0x36u, (uint8_t)(d + 2u), slot);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0x36u, (uint8_t)(d + 3u), slot);
+        return;
+    } else if (t == 0x38u) {
+        rl_cell_put(h, l, 0u, 0u, slot);
+        rl_cell_put((uint8_t)(h + 1u), l, 0u, 0u, slot);
+        d = 2u;
+    } else d = 2u;
+    rl_cell_put(h, (uint8_t)(l + 1u), 0x36u, d, slot);
+    rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0x36u, (uint8_t)(d + 1u), slot);
+}
+
+/* sub_719D: movedor BAT */
+static void s_719D(uint16_t ix, uint8_t slot)
+{
+    uint8_t code = rr((uint16_t)(ix + 1u));
+    uint8_t h, l, f, d;
+    if (code == 0x36u) { s_7279(ix, slot); return; }
+    h = rr((uint16_t)(ix + 2u)); l = rr((uint16_t)(ix + 3u));
+    f = rr((uint16_t)(ix + 4u));
+    if (rr(0xEAC9u) & 0x01u) {
+        /* IMPAR: paso final / idle */
+        if (f & 0x01u) {
+            if (!(f & 0x02u)) {                       /* izq (7126, D=0) */
+                rl_cell_put(h, l, code, 0u, slot);
+                rl_cell_put((uint8_t)(h + 1u), l, code, 1u, slot);
+                rl_cell_put(h, (uint8_t)(l + 1u), code, 2u, slot);
+                rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, 3u, slot);
+                rl_cell_put((uint8_t)(h + 2u), (uint8_t)(l + 1u), 0u, 0u, slot);
+                rl_cell_put((uint8_t)(h + 2u), l, 0u, 0u, slot);
+            } else {                                  /* der (71BC: 7139 D=4) */
+                rl_cell_put((uint8_t)(h - 1u), l, 0u, 0u, slot);
+                rl_cell_put((uint8_t)(h - 1u), (uint8_t)(l + 1u), 0u, 0u, slot);
+                rl_cell_put(h, l, code, 4u, slot);
+                rl_cell_put((uint8_t)(h + 1u), l, code, 5u, slot);
+                rl_cell_put(h, (uint8_t)(l + 1u), code, 6u, slot);
+                rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, 7u, slot);
+            }
+        } else if (f & 0x04u) {
+            d = (f & 0x02u) ? 4u : 0u;                /* variante por cara */
+            if (f & 0x08u) {                          /* ARRIBA (71D4) */
+                rl_cell_put(h, l, code, d, slot);
+                rl_cell_put((uint8_t)(h + 1u), l, code, (uint8_t)(d + 1u), slot);
+                rl_cell_put(h, (uint8_t)(l + 1u), code, (uint8_t)(d + 2u), slot);
+                rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, (uint8_t)(d + 3u), slot);
+                rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 2u), 0u, 0u, slot);
+                rl_cell_put(h, (uint8_t)(l + 2u), 0u, 0u, slot);
+            } else {                                  /* abajo (7155) */
+                rl_cell_put(h, (uint8_t)(l - 1u), 0u, 0u, slot);
+                rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l - 1u), 0u, 0u, slot);
+                rl_cell_put(h, l, code, d, slot);
+                rl_cell_put((uint8_t)(h + 1u), l, code, (uint8_t)(d + 1u), slot);
+                rl_cell_put(h, (uint8_t)(l + 1u), code, (uint8_t)(d + 2u), slot);
+                rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, (uint8_t)(d + 3u), slot);
+            }
+        } else {                                      /* quieto (71E3) */
+            d = (f & 0x02u) ? 4u : 0u;
+            rl_cell_put(h, l, code, d, slot);
+            rl_cell_put((uint8_t)(h + 1u), l, code, (uint8_t)(d + 1u), slot);
+            rl_cell_put(h, (uint8_t)(l + 1u), code, (uint8_t)(d + 2u), slot);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, (uint8_t)(d + 3u), slot);
+        }
+        return;
+    }
+    /* PAR (71F4): celda nueva + grafico de transicion */
+    if (f & 0x01u) {
+        uint8_t hg;
+        if (!(f & 0x02u)) { d = 0x0Cu; h--; wr((uint16_t)(ix + 2u), h); hg = h; }
+        else              { d = 0x16u; wr((uint16_t)(ix + 2u), (uint8_t)(h + 1u)); hg = h; }
+        rl_cell_put(hg, l, code, d, slot);
+        rl_cell_put((uint8_t)(hg + 1u), l, code, (uint8_t)(d + 1u), slot);
+        rl_cell_put((uint8_t)(hg + 2u), l, code, (uint8_t)(d + 2u), slot);
+        rl_cell_put(hg, (uint8_t)(l + 1u), code, (uint8_t)(d + 3u), slot);
+        rl_cell_put((uint8_t)(hg + 1u), (uint8_t)(l + 1u), code, (uint8_t)(d + 4u), slot);
+        rl_cell_put((uint8_t)(hg + 2u), (uint8_t)(l + 1u), code, (uint8_t)(d + 5u), slot);
+    } else if (f & 0x04u) {
+        d = (f & 0x02u) ? 0x22u : 0x1Cu;
+        if (!(f & 0x08u)) {
+            /* ABAJO: si el piso bloquea (4566 modo 1) el BAT MUERE */
+            if (p_4566(1u, h, (uint8_t)(l + 2u))) {
+                wr(ix, 0u);
+                rl_cell_put(h, l, 0u, 0u, slot);
+                rl_cell_put((uint8_t)(h + 1u), l, 0u, 0u, slot);
+                rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0u, 0u, slot);
+                rl_cell_put(h, (uint8_t)(l + 1u), 0u, 0u, slot);
+                wr(0xEAF6u, 0x32u);                   /* puff (sub_5D63) */
+                return;
+            }
+            wr((uint16_t)(ix + 3u), (uint8_t)(l + 1u));
+            rl_cell_put(h, l, code, d, slot);
+            rl_cell_put((uint8_t)(h + 1u), l, code, (uint8_t)(d + 1u), slot);
+            rl_cell_put(h, (uint8_t)(l + 1u), code, (uint8_t)(d + 2u), slot);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, (uint8_t)(d + 3u), slot);
+            rl_cell_put(h, (uint8_t)(l + 2u), code, (uint8_t)(d + 4u), slot);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 2u), code, (uint8_t)(d + 5u), slot);
+        } else {
+            /* ARRIBA: techo bloquea (4566 modo 1 en l-1) -> MUERE (724B) */
+            if (p_4566(1u, h, (uint8_t)(l - 1u))) {
+                wr(ix, 0u);
+                rl_cell_put(h, l, 0u, 0u, slot);
+                rl_cell_put((uint8_t)(h + 1u), l, 0u, 0u, slot);
+                rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), 0u, 0u, slot);
+                rl_cell_put(h, (uint8_t)(l + 1u), 0u, 0u, slot);
+                wr(0xEAF6u, 0x32u);
+                return;
+            }
+            l--;
+            wr((uint16_t)(ix + 3u), l);               /* 725D */
+            rl_cell_put(h, l, code, d, slot);
+            rl_cell_put((uint8_t)(h + 1u), l, code, (uint8_t)(d + 1u), slot);
+            rl_cell_put(h, (uint8_t)(l + 1u), code, (uint8_t)(d + 2u), slot);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, (uint8_t)(d + 3u), slot);
+            rl_cell_put(h, (uint8_t)(l + 2u), code, (uint8_t)(d + 4u), slot);
+            rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 2u), code, (uint8_t)(d + 5u), slot);
+        }
+    } else {
+        /* quieto (7268): aleteo idle, deltas 8-11 / 0x12-0x15 */
+        d = (f & 0x02u) ? 0x12u : 0x08u;
+        rl_cell_put(h, l, code, d, slot);
+        rl_cell_put((uint8_t)(h + 1u), l, code, (uint8_t)(d + 1u), slot);
+        rl_cell_put(h, (uint8_t)(l + 1u), code, (uint8_t)(d + 2u), slot);
+        rl_cell_put((uint8_t)(h + 1u), (uint8_t)(l + 1u), code, (uint8_t)(d + 3u), slot);
+    }
+}
+
+/* sub_438D: driver por frame de los BATs */
+void player_bats_frame(void)
+{
+    for (int s = 0; s < 8; s++) {
+        uint16_t ix = (uint16_t)(0xE416u + s * 5u);
+        if (!rr(ix)) continue;
+        wr((uint16_t)(ix + 4u), s_43BF(ix));
+    }
+    for (int s = 0; s < 8; s++) {
+        uint16_t ix = (uint16_t)(0xE416u + s * 5u);
+        if (!rr(ix)) continue;
+        if (rr((uint16_t)(ix + 4u)) & 0x05u)
+            wr((uint16_t)(ix + 4u), s_43BF(ix));
+        s_719D(ix, (uint8_t)s);
+    }
+}
+
+/* ==========================================================================
+ * DANIO POR CONTACTO + MUERTE (sub_5A2D / sub_5AF8 / sub_5A63)
+ * ========================================================================== */
+/* sub_5AF8: peligro en (b,c)? celda con bit 0x10 y sin 0x80; flags del byte
+ * E6EE&7 (saltando anula bit2; el power-up 0xE344 anula bit1). */
+static uint8_t p_5AF8(uint8_t b, uint8_t c)
+{
+    uint8_t v, d, ph;
+    if (c >= 0x14u) return 0;
+    v = cm(b, c);
+    if (v & 0x80u) return 0;
+    if (!(v & 0x10u)) return 0;
+    d = (uint8_t)(e6ee(b, c) & 0x07u);
+    ph = rr(0xEAD6u);
+    if (ph >= 2u && ph < 0x11u) d &= (uint8_t)~0x04u;
+    if (rr(0xE344u)) d &= (uint8_t)~0x02u;
+    return d;
+}
+
+/* sub_5A2D (deteccion): solo frames IMPARES; invulnerable con el power-up
+ * (0xE343); 4 probes en las celdas del cuerpo. 1 = murio. */
+int player_check_death(void)
+{
+    uint8_t b, c;
+    if ((rr(0xEAC9u) & 0x01u) == 0u) return 0;
+    if (rr(0xEAE0u)) return 1;
+    if (rr(0xE343u)) return 0;
+    b = rr(0xE334u); c = rr(0xE335u);
+    if (p_5AF8(b, c)) return 1;
+    if (p_5AF8((uint8_t)(b + 1u), c)) return 1;
+    if (p_5AF8((uint8_t)(b + 1u), (uint8_t)(c + 1u))) return 1;
+    if (p_5AF8(b, (uint8_t)(c + 1u))) return 1;
+    return 0;
+}
+
+/* anim de muerte (sub_5B66): frame 7 o 10-12 por bits del contador */
+static void death_anim(void)
+{
+    uint8_t fc = rr(0xEAC9u);
+    uint8_t fr = ((fc & 0x03u) == 0u) ? 7u : (uint8_t)(9u + (fc & 0x03u));
+    g_plr_frame = fr;
+    s_6F27(fr);
+}
+
+/* sub_5A63: secuencia de muerte (bloqueante: consume frames con vsync).
+ * 16 frames de agonia, caida hasta fila 0x12, frame 0x0D + 32 frames,
+ * vidas--, commit del estado (LDIR E336->E324 + sub_6134), EAE0=1.
+ * (Musica de muerte 0x7A73/0x7A8F - Fase 6.) */
+void player_death_run(void)
+{
+    wr(0xEAC9u, 0u);
+    for (int i = 0; i < 16; i++) {
+        death_anim();
+        wr(0xEAC9u, (uint8_t)(rr(0xEAC9u) + 1u));
+        hal_wait_vsync();
+        hal_poll_events();
+    }
+    for (;;) {
+        uint8_t d, e;
+        wr(0xEACBu, 0u); wr(0xEACCu, 0u);
+        s_40BB(&d, &e);
+        if (!(d & 0x04u)) break;
+        if (rr(0xE335u) >= 0x12u) break;
+        if ((rr(0xEAC9u) & 0x01u) == 0u) {       /* sub_5B78: medio paso */
+            uint8_t row = (uint8_t)(rr(0xE335u) + 1u);
+            wr(0xE335u, row);
+            g_plr_px = ((int)rr(0xE334u) + 1) * 8;
+            g_plr_py = (((int)row + 4) * 2 + 1) * 4 - 1;
+        } else {
+            s_6F45_pixel();
+        }
+        death_anim();
+        wr(0xEAC9u, (uint8_t)(rr(0xEAC9u) + 1u));
+        hal_wait_vsync();
+        hal_poll_events();
+    }
+    s_6F45_pixel();
+    g_plr_frame = 0x0D;
+    s_6F27(0x0Du);
+    for (int i = 0; i < 32; i++) { hal_wait_vsync(); hal_poll_events(); }
+    wr(0xE324u, (uint8_t)(rr(0xE324u) - 1u));
+    wr(0xE336u, (uint8_t)(rr(0xE336u) - 1u));
+    if (!rr(0xEAE0u)) {
+        wr(0xEAE0u, 1u);
+        for (int i = 0; i < 0x0D; i++)
+            wr((uint16_t)(0xE324u + i), rr((uint16_t)(0xE336u + i)));
+        if (rr(0xE331u)) wr(0xE331u, (uint8_t)(rr(0xE331u) + 4u));
+        if (rr(0xE332u)) wr(0xE332u, (uint8_t)(rr(0xE332u) + 4u));
+        rl_persist_commit();                      /* sub_6134 */
+    }
+}
+
 /* sub_6F27: setea los 3 planos del jugador (sprites 8,9,10) */
 static void s_6F27(uint8_t frame)
 {
@@ -641,8 +1082,13 @@ void player_frame(uint8_t stick, uint8_t trig)
     s_40BB(&d, &e);
     s_6F5C(d, e);
     s_6F27((uint8_t)g_plr_frame);          /* sprites 8-10 en la attr table */
+}
 
-    wr(0xEAC9u, (uint8_t)(fc + 1u));       /* 40AF: contador de frame */
+/* 40AF: el contador de frame se incrementa al FINAL del frame completo —
+ * después de bloques/bats/daño, que comparten la paridad del frame. */
+void player_end_frame(void)
+{
+    wr(0xEAC9u, (uint8_t)(rr(0xEAC9u) + 1u));
 }
 
 void player_sync_pixel(void)

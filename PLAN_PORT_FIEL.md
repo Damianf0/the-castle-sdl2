@@ -164,7 +164,20 @@ handlers 0x5C3A+) en vez del AABB maqueta; 0x62D8/0x623C (render/triggers).
 
 **Motor COLL ✅ portado** (bloques empujables: ver CHANGELOG (6)).
 
-**Motor BAT (enemigos) — mapeado, listo para portar a player.c:**
+**Motor BAT ✅ portado y validado (2026-06-12)**: driver+cerebros+movedor+
+daño/muerte en player.c; suite `bats` del harness compara CASTLE_BATTRACE
+(+CASTLE_PCOL/PROW) frame a frame contra fixtures frescos de openMSX
+(tests/fixtures/bats/, 10 salas vía tools/gen_bats_fixtures.py +
+tools/tr_bats.tcl): 8/8 exactas 301/301; salas 29/81 en BATS_PENDING hasta
+portar los ASCENSORES (e43e 0x1D escribe piso en el colmap y extiende las
+patrullas 0x39/0x38). El criterio original (enemies_paths.c) se descartó:
+la sala 49 probó que el path legacy era un artefacto (la trampa 0x35 cae al
+cargar y el BAT real rebota contra ella); enemies_paths.c y enemies_port.c
+BORRADOS. Bug real cazado: sub_4901 solo sube si el jugador está ARRIBA
+(JP Z/JP C en 49A2 → horizontal). Pendiente de la fase: ascensores
+(sub_4406/442D), partículas sub_61F5/5D63, escaleras, pickup por celda.
+
+Mapa original (referencia):
 - Driver `sub_438D`: tabla 0xE416 (8 slots). Pasada 1: cerebro `sub_43BF`
   para cada activo. Pasada 2: si (field4 & 5) → 43BF de nuevo; SIEMPRE
   `sub_719D` (movedor).

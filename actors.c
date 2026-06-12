@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include "actors.h"
 #include "room_loader.h"
-#include "enemies_port.h"
 #include "doors_port.h"
 #include "blocks_port.h"
 #include "keys_port.h"
@@ -193,7 +192,7 @@ void actors_init_room(unsigned char room, int entry_edge)
     }
     g_player_invuln = 80;   /* gracia al entrar (el spawn puede caer cerca de un enemigo) */
 
-    /* Los enemigos reales los maneja enemies_port (path-replay del ROM). */
+    /* Los enemigos reales los maneja el motor BAT portado (player.c). */
     g_enemy_n = 0;
 }
 
@@ -270,29 +269,8 @@ int actors_update(int left, int right, int jump)
 
     if (g_player_moving) g_player_anim = (g_player_anim + 1) & 0x3F;
 
-    /* --- daño: tocar un enemigo cuesta una vida --- */
-    if (g_player_invuln > 0) {
-        g_player_invuln--;
-    } else {
-        /* AABB del jugador (un poco encogido para que sea justo) */
-        int plx = g_player_px + 1, ply = g_player_py + 1;
-        int prx = g_player_px + PW - 1, pry = g_player_py + PH - 1;
-        for (int e = 0; e < g_pen_n; e++) {
-            if (!g_pen[e].active) continue;
-            /* enemigo en pantalla: col=byte2+2, fila=byte3+4, 2x2 tiles (16x16),
-             * encogido 3px por lado */
-            int ex = (g_pen[e].row + 2) * 8 + 3;
-            int ey = (g_pen[e].col + 4) * 8 + 3;
-            int ex2 = ex + 16 - 6, ey2 = ey + 16 - 6;
-            if (plx < ex2 && prx > ex && ply < ey2 && pry > ey) {
-                /* GOLPE */
-                if (g_player_lives > 0) g_player_lives--;
-                else g_player_lives = 3;            /* viewer: reinicia el contador */
-                g_player_invuln = 90;               /* ~1.5s de parpadeo/invuln */
-                spawn_player(0);                    /* reaparece en el centro */
-                break;
-            }
-        }
-    }
+    /* daño por contacto: lo maneja el motor real (player_check_death /
+     * sub_5A2D en player.c); el path-replay de enemigos murió en la Fase 4 */
+    if (g_player_invuln > 0) g_player_invuln--;
     return 0;
 }

@@ -189,6 +189,62 @@ def run(results):
         return errs
     check('jugador (trazas frame a frame)', t_player)
 
+    # --- 6c. enemigos BAT vs trazas-oráculo (Fase 4) ---------------------------
+    # player.c (sub_438D/43BF/719D y cerebros 4882/48AD/4901/7279 portados)
+    # corre cada sala con el jugador fijado en la celda de la captura y debe
+    # reproducir frame a frame las posiciones de los 8 slots BAT (incluye la
+    # interacción con los objetos COLL: trampas 0x35 que caen, etc.).
+    # Salas cuyo ciclo BAT depende del motor de ASCENSORES (e43e código 0x1D,
+    # sub_4406/442D — aún no portado): la plataforma móvil escribe bits de piso
+    # en el colmap y extiende las patrullas. Se saltan hasta portarlo.
+    BATS_PENDING = {'29', '81'}
+    def t_bats():
+        import glob as _g
+        errs = []
+        for bf in sorted(_g.glob(os.path.join(FIX, 'bats', 'bats_*.txt'))):
+            lines = open(bf).read().splitlines()
+            hdr = lines[0].split()        # "# room XX pcol P prow R"
+            xx, pcol, prow = hdr[2], hdr[4], hdr[6]
+            if xx in BATS_PENDING:
+                continue
+            out = os.path.join(tempfile.gettempdir(), 'battrace_%s.txt' % xx)
+            env = dict(os.environ, CASTLE_BATTRACE=out, CASTLE_ROOM=xx,
+                       CASTLE_FRAMES=str(len(lines) - 1),
+                       CASTLE_PCOL=pcol, CASTLE_PROW=prow)
+            r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
+                               text=True, timeout=60)
+            if r.returncode != 0 or not os.path.exists(out):
+                errs.append('sala %s: exe falló' % xx)
+                continue
+            def positions(ls):
+                # "fc s:col,fila[/fXX] ..." -> [(fc, {slot: (col,fila)})]
+                seq = []
+                for l in ls:
+                    if not l.strip() or l.startswith('#'):
+                        continue
+                    p = l.split()
+                    slots = {}
+                    for it in p[1:]:
+                        if it.startswith('|'):
+                            break
+                        s, rest = it.split(':')
+                        slots[int(s)] = rest.split('/')[0]
+                    seq.append(slots)
+                return seq
+            want = positions(lines[1:])
+            got = positions(open(out).read().splitlines())
+            os.remove(out)
+            n = min(len(want), len(got))
+            bad = sum(1 for i in range(n) if want[i] != got[i])
+            if bad:
+                first = next(i for i in range(n) if want[i] != got[i])
+                errs.append('sala %s: %d/%d frames difieren (primero f%d: '
+                            'oráculo %s vs port %s)' %
+                            (xx, bad, n, first, want[first], got[first]))
+        return errs
+    check('enemigos BAT (trazas frame a frame; %d salas pendientes de '
+          'ascensores)' % len(BATS_PENDING), t_bats)
+
     # --- 7. título vs oráculo -------------------------------------------------
     # CASTLE_TITLEDUMP corre la intro real (rápido) y vuelca la VRAM en el
     # mismo momento que tools/cap_title.tcl capturó la del juego real en

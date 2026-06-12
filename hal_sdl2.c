@@ -17,7 +17,6 @@
 #include "game.h"
 #include "geom.h"
 #include "actors.h"
-#include "enemies_port.h"
 
 int g_actors_on = 0;   /* el viewer lo activa para dibujar jugador+enemigos */
 
@@ -560,57 +559,11 @@ static void vdp_render_sprites(void)
  * (Capa maqueta: desaparece cuando Fases 3-5 porten el game loop real.)
  * ========================================================================== */
 
-/* blitea una celda de 16 bytes intercalados (patrón,color) al framebuffer */
-static void blit_cell16(int bx, int by, const uint8_t *t16, int mirror, int transp)
-{
-    for (int yy = 0; yy < 8; yy++) {
-        uint8_t pat = t16[yy * 2], col = t16[yy * 2 + 1];
-        uint8_t fg = (uint8_t)(col >> 4), bg = (uint8_t)(col & 0x0Fu);
-        int y = by + yy;
-        if (y < 0 || y >= MSX_H) continue;
-        for (int xx = 0; xx < 8; xx++) {
-            int x = bx + (mirror ? (7 - xx) : xx);
-            uint8_t pi = (pat & (0x80u >> xx)) ? fg : bg;
-            if (x < 0 || x >= MSX_W) continue;
-            if (transp && pi <= 1u) continue;   /* 0/1 = transparente */
-            framebuf[y * MSX_W + x] = g_palette[pi];
-        }
-    }
-}
-
 static void debug_draw_geom(void)
 {
-    void draw_enemies(int, int);
-    if (!g_actors_on) return;
-    /* el jugador lo dibuja el VDP (sprites 8-10, attr table escrita por
-     * player.c); el HUD de llaves lo dibuja sub_5E01 en la name table.
-     * Queda solo el overlay de enemigos (path-replay — Fase 4). */
-    draw_enemies(0, 0);
-}
-
-/* Enemigos faithful: MOVIMIENTO = replay exacto del ROM (enemies_port.c) y
- * GRÁFICO = las celdas reales capturadas de la VRAM en el spawn, dibujadas
- * en la posición actual con el fondo transparente. Mapeo (validado vs name
- * table real): screen_col = byte2 (p->row), screen_row = byte3+4 (p->col). */
-void draw_enemies(int OX, int OY)
-{
-    if ((g_geom_room >> 4) > 9 || (g_geom_room & 0x0F) > 9) return;
-    for (int i = 0; i < g_pen_n; i++) {
-        PortEnemy *p = &g_pen[i];
-        if (!p->active) continue;
-        /* Se ESPEJA horizontalmente cuando el enemigo va en dirección contraria
-         * a la que mira de fábrica (facing izq/der). */
-        int mirror = (p->face0 != 0 && p->face != 0 && p->face != p->face0);
-        for (int dr = 0; dr < 2; dr++) {
-            for (int dc = 0; dc < p->gw; dc++) {
-                /* al espejar, la columna de tile dc va al lado opuesto */
-                int scol = mirror ? (p->gw - 1 - dc) : dc;
-                blit_cell16(OX + (p->row + p->gox + scol) * 8,
-                            OY + (p->col + 4 + dr) * 8,
-                            p->gfx[dr * 4 + dc], mirror, 1);
-            }
-        }
-    }
+    /* Ya no hay overlays: el jugador lo dibuja el VDP (sprites 8-10), los
+     * enemigos y bloques se dibujan a sí mismos por celdas (sub_719D /
+     * sub_710B) y el HUD por sub_5E01. La maqueta de render murió. */
 }
 
 void hal_screenshot(const char *path)
