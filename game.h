@@ -138,6 +138,10 @@ void music_room_start(void);   /* 0x656B: tema por sala según power-ups */
 void music_play_death(void);   /* sub_5B35/5B56: jingle 0x7A73/0x7A8F */
 void music_stop(void);
 
+/* --- pickup.c: minimapa del HUD --- */
+void minimap_draw_full(void);      /* sub_64C3+638E: pickup del mapa 0x22 */
+void minimap_room_exit_mark(void); /* sub_61E8+5053: al salir de la sala  */
+
 /* --- camera.c --- */
 void camera_init(void);
 void camera_update(void);

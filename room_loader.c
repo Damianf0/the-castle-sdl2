@@ -916,7 +916,7 @@ void rl_room_exit(uint8_t edge)
 {
     if (edge == 0u) return;
     s_6134();
-    /* minimapa (0xE321 bit3 → sub_63FD) — Fase 5 */
+    minimap_room_exit_mark();   /* 5053: visitada (61E8) + pintarla (63FD) */
     if (R(0xEAE2u)) {                      /* trigger 0x25: resetea puertas */
         memset(&R(0xE00Du), 0, 0xD2);
     }

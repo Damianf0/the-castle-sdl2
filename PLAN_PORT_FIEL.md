@@ -308,9 +308,16 @@ Pendiente de la fase:
   bloqueantes sub_51D9 / sub_518E (usa la tabla 0x5748: sala/col/fila →
   handler; ¡"respawns 0x5748" de las notas viejas era ESTO!) + helpers
   4AE2 (flash de pantalla)/4B13/4E8E/4F93 — hoy son pickups mecánicos.
-- MINIMAPA (0x22): sub_64C3 (área name 7×4 tiles 0x0E-0x29 en cols 17-23)
-  + 638E (sprites planos 0-5 patrones 0x2F+) + 63BB/640F (pinta salas
-  visitadas desde E000 vía 60EB) + 63FD (sala actual; hook en rl_room_exit).
+- ~~MINIMAPA~~ ✅ portado y validado (2026-06-12): sub_64C3 (canvas de
+  chars 0x0E-0x29 en cols 17-23 filas 0-3) + 638E (marco de 6 sprites
+  planos 0-5 + pinta las 100 salas) + 640F (el "pixel" de sala = 2
+  scanlines de COLOR: col par=nibble FG, impar=BG; py=fila*3+2; char =
+  0x0F+col/2+charfila*7) + 63FD (cursor) + 61E8/5053 (al SALIR de una
+  sala con el mapa: bit de visitada en E000 + pintarla cyan — hook en
+  rl_room_exit). Suite pickup ampliada: 5 escenarios con comparación de
+  VRAM del HUD (name filas 0-4 + colores chars 0x00-0x3F) byte-exacta —
+  incluye 70map (pickup del mapa) y 70out (salida con mapa). El harness
+  necesita rl_boot_vram (colores base del charset fijo).
 - Color-cycling del power-up 0x23 (sub_7510, cosmético).
 - CAÍDA AL POZO: caer por el borde inferior (visto en sala 06) termina la
   partida y vuelve al título/demo en el juego real — trazar dónde retorna

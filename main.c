@@ -650,8 +650,11 @@ int main(int argc, char *argv[])
             if (!f) { free(rom_buf); return 1; }
             g_rom = rom_buf; g_rom_size = rom_size;
             rl_reset();
+            rl_boot_vram();        /* charset fijo (colores del HUD/minimapa) */
             if (pc) rl_ram_wb(0xE322u, (uint8_t)atoi(pc));
             if (pr) rl_ram_wb(0xE323u, (uint8_t)atoi(pr));
+            if (getenv("CASTLE_GIVEMAP"))      /* mapa pre-dado (E321 bit3) */
+                rl_ram_wb(0xE321u, (uint8_t)(rl_ram_rb(0xE321u) | 0x08u));
             rl_load_room(room);
             player_sync_pixel();
             for (int i = 0; i < nframes; i++) {
@@ -697,6 +700,24 @@ int main(int argc, char *argv[])
                 player_tail_frame();
             }
             fclose(f);
+            /* CASTLE_VRAMDUMP: name table filas 0-4 + color table de los
+             * chars 0x00-0x3F (incluye el MINIMAPA) para comparar el HUD
+             * contra el dump gemelo de tools/tr_pick.tcl */
+            {
+                const char *vd = getenv("CASTLE_VRAMDUMP");
+                if (vd) {
+                    FILE *v = fopen(vd, "w");
+                    if (v) {
+                        for (int a = 0; a < 0xA0; a++)
+                            fprintf(v, "%02X", hal_vdp_read_vram((uint16_t)(0x1800u + a)));
+                        fprintf(v, "\n");
+                        for (int a = 0; a < 0x200; a++)
+                            fprintf(v, "%02X", hal_vdp_read_vram((uint16_t)(0x2000u + a)));
+                        fprintf(v, "\n");
+                        fclose(v);
+                    }
+                }
+            }
             printf("CASTLE_PICKTRACE: sala 0x%02X, %d frames -> %s\n",
                    room, nframes, pt);
             free(rom_buf);

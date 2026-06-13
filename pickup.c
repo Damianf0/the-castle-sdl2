@@ -209,7 +209,7 @@ void pickup_frame(void)
             break;
         case 0x22u:                       /* MAPA */
             wr(0xE321u, (uint8_t)(rr(0xE321u) | 0x08u)); /* SET 3 */
-            /* sub_64C3/638E: dibujo del minimapa — PENDIENTE */
+            minimap_draw_full();                         /* 64C3 + 638E */
             break;
         case 0x23u:                       /* power-up ROJO (no se borra) */
             if (rr(0xE343u) == 0x0Au) break;
@@ -255,6 +255,83 @@ void pickup_frame(void)
         }
         }
     }
+}
+
+/* ==========================================================================
+ * MINIMAPA del HUD (cols 17-23, filas 0-3; chars 0x0E-0x29 del charset).
+ * Cada sala del castillo (10×10) = 4×3 píxeles; el "pixel" de sala son 2
+ * scanlines de COLOR (no de pattern): los chars tienen pattern fijo con la
+ * mitad izquierda en FG y la derecha en BG, así la sala de columna PAR vive
+ * en el nibble alto (FG) y la IMPAR en el bajo (BG) del byte de color.
+ * Colores: 4 = no visitada, 7 = visitada, 0x0F = sala actual, 9 = sala 09.
+ * ========================================================================== */
+
+/* sub_640F: pinta el pixel de la sala (col,fila 0-9) con el color c */
+static void minimap_paint(uint8_t col, uint8_t fila, uint8_t color)
+{
+    uint8_t py = (uint8_t)(fila * 3u + 2u);
+    int i;
+    for (i = 0; i < 2; i++, py++) {
+        uint8_t ch = (uint8_t)(0x0Fu + (col >> 1) + (py >> 3) * 7u);
+        uint16_t addr = (uint16_t)(0x2000u + ch * 8u + (py & 7u));
+        uint8_t v = hal_vdp_read_vram(addr);
+        if (col & 0x01u) v = (uint8_t)((v & 0xF0u) | color);
+        else             v = (uint8_t)((v & 0x0Fu) | (uint8_t)(color << 4));
+        hal_vdp_write_vram(addr, v);
+    }
+}
+
+/* sub_63FD: sala en BCD (hi=fila, lo=col) */
+static void minimap_paint_bcd(uint8_t roomBcd, uint8_t color)
+{
+    minimap_paint((uint8_t)(roomBcd & 0x0Fu), (uint8_t)(roomBcd >> 4), color);
+}
+
+/* sub_61E8 + cabeza de sub_5053: al SALIR de una sala con el mapa, marcar
+ * el bit de visitada (0xE000, bit 7-(idx&7)) y pintarla cyan (7). Llamar
+ * ANTES del cambio de sala (rl_room_exit). */
+void minimap_room_exit_mark(void)
+{
+    uint8_t r, idx;
+    uint16_t a;
+    if (!(rr(0xE321u) & 0x08u)) return;       /* sin mapa */
+    r = rr(0xE320u);
+    idx = (uint8_t)((r >> 4) * 10u + (r & 0x0Fu));   /* sub_60AA */
+    a = (uint16_t)(0xE000u + (idx >> 3));            /* sub_6110 (C=1) */
+    wr(a, (uint8_t)(rr(a) | (uint8_t)(1u << (7u - (idx & 7u)))));
+    minimap_paint_bcd(r, 7u);
+}
+
+/* sub_64C3 + sub_638E completo: dibujo del minimapa (pickup del mapa).
+ * Canvas de chars + marco de 6 sprites (planos 0-5) + las 100 salas según
+ * el bitfield de visitadas + la sala actual en blanco (+ la sala 09 en
+ * rojo claro si E321 bit1). */
+void minimap_draw_full(void)
+{
+    uint8_t fila, col, t;
+    /* sub_64C3(HL=0x1100, BC=0x0704, A=0x0E): chars consecutivos */
+    t = 0x0Eu;
+    for (fila = 0u; fila < 4u; fila++)
+        for (col = 0u; col < 7u; col++)
+            nt_put((uint16_t)(fila * 32u + 17u + col), t++);
+    /* sub_638E: marco con sprites, patrones 2F,2F,30 / 31,31,32 */
+    player_sprite_plane(0x2Fu, 0u, 0x90, 0xFF);
+    player_sprite_plane(0x2Fu, 1u, 0xA0, 0xFF);
+    player_sprite_plane(0x30u, 2u, 0xB0, 0xFF);
+    player_sprite_plane(0x31u, 3u, 0x90, 0x0F);
+    player_sprite_plane(0x31u, 4u, 0xA0, 0x0F);
+    player_sprite_plane(0x32u, 5u, 0xB0, 0x0F);
+    /* sub_63BB: las 100 salas según E000 (sub_60EB) */
+    for (fila = 0u; fila < 10u; fila++)
+        for (col = 0u; col < 10u; col++) {
+            uint8_t idx = (uint8_t)(fila * 10u + col);
+            uint8_t bit = (uint8_t)((rr((uint16_t)(0xE000u + (idx >> 3)))
+                                     >> (7u - (idx & 7u))) & 1u);
+            minimap_paint(col, fila, bit ? 7u : 4u);
+        }
+    /* sala actual en blanco; sala 09 especial si E321 bit1 */
+    minimap_paint_bcd(rr(0xE320u), 0x0Fu);
+    if (rr(0xE321u) & 0x02u) minimap_paint_bcd(0x09u, 9u);
 }
 
 /* ===== sub_4499 + sub_74E9: animador de e3d6 (cada frame) =====

@@ -291,19 +291,27 @@ def run(results):
         import glob as _g
         errs = []
         for bf in sorted(_g.glob(os.path.join(FIX, 'pick', 'pick_*.txt'))):
+            if bf.endswith('_vram.txt'):
+                continue
+            name = os.path.basename(bf)[5:-4]
             lines = open(bf).read().splitlines()
-            hdr = lines[0].split()  # "# room XX pcol P prow R hold H from F"
+            # "# room XX pcol P prow R hold H from F [map M]"
+            hdr = lines[0].split()
             xx, pcol, prow = hdr[2], hdr[4], hdr[6]
-            out = os.path.join(tempfile.gettempdir(), 'picktrace_%s.txt' % xx)
-            env = dict(os.environ, CASTLE_PICKTRACE=out, CASTLE_ROOM=xx,
+            out = os.path.join(tempfile.gettempdir(), 'picktrace_%s.txt' % name)
+            vout = os.path.join(tempfile.gettempdir(), 'pickvram_%s.txt' % name)
+            env = dict(os.environ, CASTLE_PICKTRACE=out, CASTLE_VRAMDUMP=vout,
+                       CASTLE_ROOM=xx,
                        CASTLE_FRAMES=str(len(lines) - 1),
                        CASTLE_PCOL=pcol, CASTLE_PROW=prow,
                        CASTLE_HOLD=hdr[hdr.index('hold') + 1],
                        CASTLE_HOLDFROM=hdr[hdr.index('from') + 1])
+            if 'map' in hdr and hdr[hdr.index('map') + 1] != '0':
+                env['CASTLE_GIVEMAP'] = '1'
             r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
                                text=True, timeout=60)
             if r.returncode != 0 or not os.path.exists(out):
-                errs.append('sala %s: exe falló' % xx)
+                errs.append('%s: exe falló' % name)
                 continue
             want = [l for l in lines[1:] if l.strip()]
             got = [l for l in open(out).read().splitlines() if l.strip()]
@@ -312,11 +320,20 @@ def run(results):
             bad = sum(1 for i in range(n) if want[i] != got[i])
             if bad:
                 first = next(i for i in range(n) if want[i] != got[i])
-                errs.append('sala %s: %d/%d frames difieren (primero f%d:\n'
+                errs.append('%s: %d/%d frames difieren (primero f%d:\n'
                             '  oráculo %s\n  port    %s)' %
-                            (xx, bad, n, first, want[first], got[first]))
+                            (name, bad, n, first, want[first], got[first]))
+            # VRAM del HUD (name filas 0-4 + colores chars 0x00-0x3F)
+            vfix = bf[:-4] + '_vram.txt'
+            if os.path.exists(vfix) and os.path.exists(vout):
+                wv = open(vfix).read().split()
+                gv = open(vout).read().split()
+                if wv != gv:
+                    errs.append('%s: VRAM del HUD difiere' % name)
+            if os.path.exists(vout):
+                os.remove(vout)
         return errs
-    check('pickup por celda (items/score/llaves/vidas)', t_pick)
+    check('pickup por celda (items/score/llaves/vidas/minimapa)', t_pick)
 
     # --- 7. título vs oráculo -------------------------------------------------
     # CASTLE_TITLEDUMP corre la intro real (rápido) y vuelca la VRAM en el

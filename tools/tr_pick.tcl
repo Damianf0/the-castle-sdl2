@@ -6,7 +6,8 @@
 # Salida -> tr_pick_out.txt (mismo formato que CASTLE_PICKTRACE del port).
 set throttle off
 set fp [open "tr_pick_in.txt" r]
-lassign [string trim [read $fp]] ::room ::pcol ::prow ::nframes ::hold ::holdfrom
+set ::givemap 0
+lassign [string trim [read $fp]] ::room ::pcol ::prow ::nframes ::hold ::holdfrom ::givemap
 close $fp
 set ::fc -1
 set ::log {}
@@ -31,6 +32,16 @@ proc sample {} {
     if {$::fc >= $::nframes} {
         debug remove_bp $::bpid
         set f [open "tr_pick_out.txt" w]; puts $f [join $::log "\n"]; close $f
+        # dump gemelo de CASTLE_VRAMDUMP: name filas 0-4 + color chars 0-0x3F
+        set v ""
+        for {set a 0} {$a < 0xA0} {incr a} {
+            append v [format %02X [debug read VRAM [expr {0x1800 + $a}]]]
+        }
+        append v "\n"
+        for {set a 0} {$a < 0x200} {incr a} {
+            append v [format %02X [debug read VRAM [expr {0x2000 + $a}]]]
+        }
+        set f [open "tr_pick_vram.txt" w]; puts $f $v; close $f
         set f [open "tr_pick_done.txt" w]; puts $f done; close $f
         exit
     }
@@ -42,6 +53,9 @@ proc forceload {} {
     debug write memory 0xe323 $::prow
     debug write memory 0xe334 $::pcol
     debug write memory 0xe335 $::prow
+    if {$::givemap ne "" && $::givemap} {
+        debug write memory 0xe321 [expr {[debug read memory 0xe321] | 8}]
+    }
     set sp [expr {[reg SP] - 2}]
     debug write memory $sp 0x70
     debug write memory [expr {$sp + 1}] 0x40

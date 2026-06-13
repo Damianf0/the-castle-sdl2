@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-06-12 — Fase 5: MINIMAPA del HUD completo
+
+- **Pintor (sub_640F) decodificado y portado**: cada sala del castillo
+  (10×10) es un bloque de 4×3 píxeles del minimapa; el "pixel" son 2
+  scanlines de la COLOR table (no patterns): la sala de columna PAR vive
+  en el nibble FG y la IMPAR en el BG del mismo byte (los chars del
+  charset tienen la mitad izquierda en FG). Colores: 4=no visitada,
+  7=visitada, 0x0F=sala actual, 9=sala 09 (con E321 bit1).
+- **Pickup del mapa (0x22)**: dibuja el canvas de chars (sub_64C3), el
+  marco de 6 sprites (sub_638E) y pinta las 100 salas según el bitfield
+  de visitadas de 0xE000 + el cursor blanco.
+- **Al salir de cada sala con el mapa** (cabeza de sub_5053, hook en
+  rl_room_exit): marca el bit de visitada (sub_61E8) y la pinta cyan.
+- Validación byte-exacta de la VRAM del HUD (name + colores) contra
+  openMSX al final de cada escenario de pickup — la suite pickup pasa de
+  3 a 5 escenarios (70map y 70out). El harness carga el charset fijo con
+  rl_boot_vram (los colores base del HUD venían de ahí). 14/14 suites.
+
 ## 2026-06-12 — Fase 5: PICKUP por celda con efectos reales — muere la maqueta AABB
 
 - **pickup.c nuevo** (sub_5B96 + dispatcher sub_5BB0): pickup por celda
