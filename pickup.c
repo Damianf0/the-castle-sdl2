@@ -206,6 +206,7 @@ void pickup_frame(void)
             /* sub_518E: pantalla especial — PENDIENTE */
             rl_load_room(rr(0xE320u));                   /* sub_64DD */
             player_sync_pixel();
+            player_room_enter();                         /* sub_404B */
             break;
         case 0x22u:                       /* MAPA */
             wr(0xE321u, (uint8_t)(rr(0xE321u) | 0x08u)); /* SET 3 */

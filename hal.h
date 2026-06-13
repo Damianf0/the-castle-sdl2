@@ -119,6 +119,12 @@ uint8_t hal_joystick_read(uint8_t port);
 bool    hal_key_pressed(void);
 
 /**
+ * hal_any_key() — ¿hay alguna tecla del teclado apretada? (la demo del
+ * juego se corta con cualquier tecla de la matriz, 0x62E8).
+ */
+bool    hal_any_key(void);
+
+/**
  * hal_msx_keyrow6() — Fila 6 de la matriz de teclado MSX, activo-bajo
  * (bit0=SHIFT, bit1=CTRL, bit2=GRAPH, bit3=CAPS, bit5=F1, bit6=F2, bit7=F3).
  * El juego la lee acumulada en (0xEAD3) y decide la velocidad en 0x62FA:

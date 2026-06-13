@@ -173,3 +173,8 @@ void title_screen(void);
 /* --- main.c: juego fiel (render VRAM real + actores/llaves/puertas/enemigos).
  * Corre hasta que se cierra la ventana. start_room en hex (0x70 = arranque). */
 void faithful_play(uint8_t start_room);
+
+/* DEMO real (4AA4-4AC7): partida con el input grabado del ROM (0x7ABE)
+ * y EAE4=1. Sale por fin del stream (EAE4 queda 1 → volver al título) o
+ * por tecla (EAE4=0 → arrancar el juego). */
+void faithful_demo(void);

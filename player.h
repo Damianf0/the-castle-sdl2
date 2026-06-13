@@ -23,6 +23,11 @@ void player_frame(uint8_t stick, uint8_t trig);
  * frame completo (tras bloques/bats/daño, que comparten la paridad). */
 void player_end_frame(void);
 
+/* sub_404B: reset al ENTRAR a cada sala (EAC9=0: la paridad arranca de
+ * cero por sala; EAD6 y flags EAE0-3/EAE8 limpios). Llamar después de
+ * CADA rl_load_room (carga inicial, transición, respawn, recarga). */
+void player_room_enter(void);
+
 /* 0x62FA: velocidad por teclas de sistema (row6 = fila 6 de la matriz MSX,
  * activo-bajo). CTRL=correr (EACA 0x70→0x30), CTRL+GRAPH=turbo (0x01);
  * escribe también transpose (0xEAF1) y tempo (0xEAF3) de la música. */
@@ -57,6 +62,11 @@ void player_tail_frame(void);
 
 /* sub_6EE1: plano de sprite genérico (patrón, plano, posición en px). */
 void player_sprite_plane(uint8_t pat, uint8_t plane, int x, int y);
+
+/* Tramo demo de sub_5128: alimenta EACB/EACC desde el stream del ROM
+ * (0xEAE5/0xEAE7) en frames pares; fin del stream → EAE3=1. Llamar al
+ * PRINCIPIO del frame (antes de pickup_frame). */
+void player_demo_input(void);
 
 /* --- pickup.c (Fase 5) --- */
 /* sub_5B96/5BB0: pickup por celda + efectos. PRIMERO en el frame (orden

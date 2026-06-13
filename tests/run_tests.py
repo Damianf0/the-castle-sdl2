@@ -335,6 +335,38 @@ def run(results):
         return errs
     check('pickup por celda (items/score/llaves/vidas/minimapa)', t_pick)
 
+    # --- 6f. DEMO completa vs oráculo (prueba integral del motor) --------------
+    # CASTLE_DEMOTRACE corre la demo REAL (input grabado del ROM en 0x7ABE
+    # sobre el motor fiel completo: jugador+bloques+enemigos+estructurales+
+    # pickup+transiciones+muerte) y debe reproducir los 1288 frames del run
+    # de la demo EXACTOS, incluyendo el corte (la IA muere y EAE3 termina).
+    def t_demo():
+        fix = os.path.join(FIX, 'demo', 'demo.txt')
+        want = open(fix).read().splitlines()
+        out = os.path.join(tempfile.gettempdir(), 'demotrace.txt')
+        env = dict(os.environ, CASTLE_DEMOTRACE=out,
+                   CASTLE_FRAMES=str(len(want) + 500))
+        r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
+                           text=True, timeout=120)
+        if r.returncode != 0 or not os.path.exists(out):
+            return ['exe falló']
+        got = open(out).read().splitlines()
+        os.remove(out)
+        errs = []
+        if len(got) != len(want):
+            errs.append('largo: oráculo %d frames, port %d' %
+                        (len(want), len(got)))
+        n = min(len(want), len(got))
+        bad = sum(1 for i in range(n) if want[i] != got[i])
+        if bad:
+            first = next(i for i in range(n) if want[i] != got[i])
+            errs.append('%d/%d frames difieren (primero f%d:\n'
+                        '  oráculo %s\n  port    %s)' %
+                        (bad, n, first, want[first], got[first]))
+        return errs
+    check('DEMO completa (%d frames, integral del motor)'
+          % sum(1 for _ in open(os.path.join(FIX, 'demo', 'demo.txt'))), t_demo)
+
     # --- 7. título vs oráculo -------------------------------------------------
     # CASTLE_TITLEDUMP corre la intro real (rápido) y vuelca la VRAM en el
     # mismo momento que tools/cap_title.tcl capturó la del juego real en

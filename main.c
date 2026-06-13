@@ -302,7 +302,8 @@ void faithful_play(uint8_t start_room)
     rl_reset();                /* estado de partida (sub_4D52): vidas, persistencia */
     geom_decode_room(room);
     rl_load_room(room);        /* sala desde el ROM: VRAM + tablas (sub_64DD) */
-    player_sync_pixel();       /* sub_6F45 + sub_6F27 (cierre real de sub_64DD) */
+    player_sync_pixel();
+                player_room_enter();       /* sub_6F45 + sub_6F27 (cierre real de sub_64DD) */
     music_room_start();        /* 0x656B: tema por sala (cola de sub_64DD) */
     g_actors_on = 1;
 
@@ -319,12 +320,16 @@ void faithful_play(uint8_t start_room)
         {
             uint8_t edge = player_take_exit();
             if (edge) {
+                /* la transición CORTA el frame (5053 → RET → 4036 recarga) */
                 rl_room_exit(edge);
                 room = rl_ram_rb(0xE320u);
                 geom_decode_room(room);
                 rl_load_room(room);
                 player_sync_pixel();
+                player_room_enter();
                 music_room_start();
+                hal_wait_game_frame(player_frame_ms());
+                continue;
             }
         }
         player_traps_frame();  /* sub_4406: trampas 0x1F antes de los BATs */
@@ -337,7 +342,10 @@ void faithful_play(uint8_t start_room)
             geom_decode_room(room);
             rl_load_room(room);                /* respawn en el punto de entrada */
             player_sync_pixel();
+            player_room_enter();
             music_room_start();
+            hal_wait_game_frame(player_frame_ms());
+            continue;          /* la muerte también corta el frame (40A6) */
         }
         player_end_frame();    /* 40AF: cierre del frame (paridad compartida) */
         player_tail_frame();   /* sub_623C: partícula + timers de power-up */
@@ -346,6 +354,78 @@ void faithful_play(uint8_t start_room)
          * busy-wait de EACA iteraciones de sub_50E8 (player_frame_ms =
          * medición openMSX): 0x70=209ms, CTRL 0x30=120ms, turbo 0x01=55ms. */
         player_speed_frame(hal_msx_keyrow6());
+        hal_wait_game_frame(player_frame_ms());
+    }
+    g_actors_on = 0;
+}
+
+/* ==========================================================================
+ * DEMO MODE real (4AA4-4AC7): la demo ES una partida normal (sub_4029)
+ * con EAE4=1 y el input desde el stream grabado del ROM (0x7ABE, tramo
+ * demo de sub_5128). Sale por: fin del stream (EAE3, EAE4 queda 1 →
+ * el título sigue su ciclo), tecla del usuario (62F1: EAE4=0 + EAE3=1 →
+ * arranca el juego real) o game over de la IA.
+ * ========================================================================== */
+void faithful_demo(void)
+{
+    uint8_t room;
+    rl_reset();                            /* sub_4D52 */
+    rl_ram_wb(0xEAE4u, 1u);                /* modo attract (lo puso 4A4A) */
+    rl_ram_wb(0xEAE5u, 0xBEu);             /* stream de input = 0x7ABE */
+    rl_ram_wb(0xEAE6u, 0x7Au);
+    rl_ram_wb(0xEAE7u, 0u);
+    rl_ram_wb(0xEACAu, 0x70u);
+    /* sub_4029: limpiar transpose/tempo auxiliares */
+    rl_ram_wb(0xEAF1u, 0u); rl_ram_wb(0xEAF2u, 0u);
+    rl_ram_wb(0xEAF4u, 0u); rl_ram_wb(0xEAF5u, 0u);
+    room = rl_ram_rb(0xE320u);             /* 0x70 */
+    geom_decode_room(room);
+    rl_load_room(room);
+    player_sync_pixel();
+    player_room_enter();
+    music_room_start();
+    g_actors_on = 1;
+
+    while (hal_poll_events()) {
+        player_demo_input();   /* sub_5128 (tramo demo): EACB/EACC del ROM */
+        pickup_frame();
+        if (rl_ram_rb(0xEAE3u)) break;     /* 4085: fin demo / tecla */
+        player_elev_frame();
+        player_coll_frame();
+        player_frame(rl_ram_rb(0xEACBu), rl_ram_rb(0xEACCu) ? 1u : 0u);
+        {
+            uint8_t edge = player_take_exit();
+            if (edge) {
+                rl_room_exit(edge);
+                room = rl_ram_rb(0xE320u);
+                geom_decode_room(room);
+                rl_load_room(room);
+                player_sync_pixel();
+                player_room_enter();
+                music_room_start();
+                hal_wait_game_frame(player_frame_ms());
+                continue;      /* la transición corta el frame (RET) */
+            }
+        }
+        player_traps_frame();
+        player_bats_frame();
+        pickup_anim_frame();
+        if (player_check_death()) {
+            player_death_run();
+            if (rl_ram_rb(0xEAE3u)) break;         /* 5AC5: 1 muerte corta */
+            if (rl_ram_rb(0xE324u) == 0u) break;   /* game over de la IA */
+            rl_ram_wb(0xEAE0u, 0u);
+            geom_decode_room(room);
+            rl_load_room(room);
+            player_sync_pixel();
+            player_room_enter();
+            music_room_start();
+            hal_wait_game_frame(player_frame_ms());
+            continue;
+        }
+        player_end_frame();
+        player_tail_frame();
+        player_speed_frame(hal_msx_keyrow6());     /* rama demo: tecla corta */
         hal_wait_game_frame(player_frame_ms());
     }
     g_actors_on = 0;
@@ -588,6 +668,7 @@ int main(int argc, char *argv[])
             }
             rl_load_room(room);
             if (hold) player_sync_pixel();
+                player_room_enter();
             for (int i = 0; i < nframes; i++) {
                 if (hold) {
                     rl_ram_wb(0xEAE0u, 0u);
@@ -657,6 +738,7 @@ int main(int argc, char *argv[])
                 rl_ram_wb(0xE321u, (uint8_t)(rl_ram_rb(0xE321u) | 0x08u));
             rl_load_room(room);
             player_sync_pixel();
+                player_room_enter();
             for (int i = 0; i < nframes; i++) {
                 rl_ram_wb(0xEAE0u, 0u);
                 rl_ram_wb(0xE343u, 1u);
@@ -686,11 +768,13 @@ int main(int argc, char *argv[])
                 }
                 {
                     uint8_t edge = player_take_exit();
-                    if (edge) {                  /* transición como el real */
+                    if (edge) {     /* la transición CORTA el frame (RET) */
                         rl_room_exit(edge);
                         room = rl_ram_rb(0xE320u);
                         rl_load_room(room);
                         player_sync_pixel();
+                        player_room_enter();
+                        continue;
                     }
                 }
                 player_traps_frame();
@@ -720,6 +804,91 @@ int main(int argc, char *argv[])
             }
             printf("CASTLE_PICKTRACE: sala 0x%02X, %d frames -> %s\n",
                    room, nframes, pt);
+            free(rom_buf);
+            return 0;
+        }
+    }
+
+    /* --- Modo traza de la DEMO (sin SDL): CASTLE_DEMOTRACE=out.txt
+     * [+CASTLE_FRAMES]. Corre la DEMO REAL (input grabado del ROM 0x7ABE
+     * sobre el motor fiel completo) y vuelca por frame: sala, jugador,
+     * fase de salto, vidas y el puntero del stream — comparable contra
+     * tools/tr_demo.tcl. Es la prueba integral de TODO el motor. */
+    {
+        const char *dt = getenv("CASTLE_DEMOTRACE");
+        if (dt) {
+            int nframes = 4000;
+            const char *nf = getenv("CASTLE_FRAMES");
+            FILE *f = fopen(dt, "w");
+            if (nf) nframes = atoi(nf);
+            if (!f) { free(rom_buf); return 1; }
+            g_rom = rom_buf; g_rom_size = rom_size;
+            rl_reset();
+            rl_boot_vram();
+            rl_ram_wb(0xEAE4u, 1u);
+            rl_ram_wb(0xEAE5u, 0xBEu);
+            rl_ram_wb(0xEAE6u, 0x7Au);
+            rl_ram_wb(0xEAE7u, 0u);
+            rl_ram_wb(0xEACAu, 0x70u);
+            rl_ram_wb(0xEAF1u, 0u); rl_ram_wb(0xEAF2u, 0u);
+            rl_ram_wb(0xEAF4u, 0u); rl_ram_wb(0xEAF5u, 0u);
+            {
+                uint8_t room = rl_ram_rb(0xE320u);
+                rl_load_room(room);
+                player_sync_pixel();
+                player_room_enter();
+                for (int i = 0; i < nframes; i++) {
+                    /* cabeza de sub_4064: limpiar el input en frames pares
+                     * (pasa ANTES del bp 0x4070 del oráculo) */
+                    if ((rl_ram_rb(0xEAC9u) & 0x01u) == 0u) {
+                        rl_ram_wb(0xEACBu, 0u);
+                        rl_ram_wb(0xEACCu, 0u);
+                    }
+                    fprintf(f, "%d sala=%02X plr=%d,%d fase=%02X vidas=%d,%d "
+                               "in=%d,%d ptr=%02X%02X r=%d\n", i,
+                            rl_ram_rb(0xE320u),
+                            rl_ram_rb(0xE334u), rl_ram_rb(0xE335u),
+                            rl_ram_rb(0xEAD6u),
+                            rl_ram_rb(0xE324u), rl_ram_rb(0xE336u),
+                            rl_ram_rb(0xEACBu), rl_ram_rb(0xEACCu) ? 1 : 0,
+                            rl_ram_rb(0xEAE6u), rl_ram_rb(0xEAE5u),
+                            rl_ram_rb(0xEAE7u));
+                    player_demo_input();
+                    pickup_frame();
+                    if (rl_ram_rb(0xEAE3u)) break;
+                    player_elev_frame();
+                    player_coll_frame();
+                    player_frame(rl_ram_rb(0xEACBu),
+                                 rl_ram_rb(0xEACCu) ? 1u : 0u);
+                    {
+                        uint8_t edge = player_take_exit();
+                        if (edge) { /* la transición CORTA el frame (RET) */
+                            rl_room_exit(edge);
+                            rl_load_room(rl_ram_rb(0xE320u));
+                            player_sync_pixel();
+                            player_room_enter();
+                            continue;
+                        }
+                    }
+                    player_traps_frame();
+                    player_bats_frame();
+                    pickup_anim_frame();
+                    if (player_check_death()) {
+                        player_death_run();
+                        if (rl_ram_rb(0xEAE3u)) break;   /* demo: 1 muerte corta */
+                        if (rl_ram_rb(0xE324u) == 0u) break;
+                        rl_ram_wb(0xEAE0u, 0u);
+                        rl_load_room(rl_ram_rb(0xE320u));
+                        player_sync_pixel();
+                        player_room_enter();
+                        continue;   /* la muerte también corta el frame */
+                    }
+                    player_end_frame();
+                    player_tail_frame();
+                }
+            }
+            fclose(f);
+            printf("CASTLE_DEMOTRACE -> %s\n", dt);
             free(rom_buf);
             return 0;
         }
@@ -809,6 +978,7 @@ int main(int argc, char *argv[])
                 rl_reset();
                 rl_load_room(room);
                 player_sync_pixel();
+                player_room_enter();
                 if (getenv("CASTLE_GIVEKEYS")) {
                     for (int c = 0; c < 6; c++)
                         rl_ram_wb((uint16_t)(0xE337u + c), 9u);
@@ -840,6 +1010,7 @@ int main(int argc, char *argv[])
                             geom_decode_room(room);
                             rl_load_room(room);
                             player_sync_pixel();
+                player_room_enter();
                             printf(">>> f%02d transicion a sala 0x%02X\n", f, room);
                         }
                     }

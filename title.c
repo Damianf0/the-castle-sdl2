@@ -59,6 +59,7 @@
 
 #include "hal.h"
 #include "game.h"
+#include "room_loader.h"
 
 /* ==========================================================================
  * CONSTANTES
@@ -621,59 +622,48 @@ void title_screen(void)
     /* sub_6383: limpiar keyframe queue */
     memset(g_keyframe_queue, 0xFFu, 9u);
 
-    /* sub_4AE2: preparar VRAM (NO toca rows 0-3, el HUD persiste) */
-    intro_prepare_vram();
+    /* Ciclo attract completo (sub_4A4A re-entrante): 3 ciclos de título →
+     * DEMO real → de vuelta al título... hasta que una tecla (en el título
+     * o cortando la demo) arranque el juego. */
+    for (;;) {
+        /* sub_4AE2: preparar VRAM (NO toca rows 0-3, el HUD persiste) */
+        intro_prepare_vram();
 
-    /* sub_4A55-4A81: logo a los 3 tercios + font/dígitos a tercios 1-2 */
-    load_title_tiles();
+        /* sub_4A55-4A81: logo a los 3 tercios + font/dígitos a tercios 1-2 */
+        load_title_tiles();
 
-    /* Silencio durante la pantalla de título */
-    music_stop();
+        /* Silencio durante la pantalla de título */
+        music_stop();
 
-    /* Bucle de 3 ciclos */
-    for (uint8_t cycle = 0u; cycle < DEMO_CYCLES; cycle++) {
+        /* Bucle de 3 ciclos */
+        for (uint8_t cycle = 0u; cycle < DEMO_CYCLES; cycle++) {
 
-        /* Fase 1: logo animado */
-        if (!title_animate_logo()) goto game_start;
-        if (!g_intro_active) goto game_start;
+            /* Fase 1: logo animado */
+            if (!title_animate_logo()) goto game_start;
+            if (!g_intro_active) goto game_start;
 
-        /* Fase 2: créditos en scroll (font/dígitos cargados por load_title_tiles) */
-        if (!title_animate_credits()) goto game_start;
-        if (!g_intro_active) goto game_start;
+            /* Fase 2: créditos en scroll */
+            if (!title_animate_credits()) goto game_start;
+            if (!g_intro_active) goto game_start;
 
-        /* Fase 3: esperar input (créditos visibles) */
-        if (title_wait_for_input()) goto game_start;
-        if (!g_intro_active) goto game_start;
+            /* Fase 3: esperar input (créditos visibles) */
+            if (title_wait_for_input()) goto game_start;
+            if (!g_intro_active) goto game_start;
 
-        /* Curtain entre ciclos (solo name table, pattern table persiste) */
-        curtain_wipe();
-    }
-
-    /* ======================================================================
-     * 3 ciclos sin input → DEMO MODE
-     * ====================================================================== */
-    game_reset_level();
-    {
-        uint16_t music_ptr = (uint16_t)(rom_rb(ROM_GAME_MUSIC)
-                             | ((uint16_t)rom_rb((uint16_t)(ROM_GAME_MUSIC + 1u)) << 8));
-        music_load(music_ptr, 0u);
-    }
-    g_player_speed = 0x70u;
-    reset_aux_state();
-
-    /* Demo loop: corre game_frame() (con keyframes de AI desde 0x7ABE) */
-    {
-        while (g_intro_active) {
-            game_frame();
-            tiles_animate(g_state_flags);
-            hal_wait_vsync();
-
-            if (hal_key_pressed()) {
-                goto game_start;
-            }
-
-            if (!hal_poll_events()) goto exit;
+            /* Curtain entre ciclos (solo name table, pattern persiste) */
+            curtain_wipe();
         }
+
+        /* ==================================================================
+         * 3 ciclos sin input → DEMO MODE real (4AA4): partida con el input
+         * grabado del ROM (0x7ABE) sobre el motor fiel.
+         * ================================================================== */
+        faithful_demo();
+        if (!hal_is_running()) goto exit;
+        if (rl_ram_rb(0xEAE4u) == 0u)      /* tecla cortó la demo (62F1) */
+            goto game_start;
+        /* fin del stream: EAF3=0 (4AC0) y de vuelta al título */
+        music_stop();
     }
 
     /* ======================================================================

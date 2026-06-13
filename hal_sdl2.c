@@ -798,6 +798,19 @@ bool hal_key_pressed(void)
 }
 
 /*
+ * ¿Hay ALGUNA tecla apretada? (equivale a "alguna fila de la matriz
+ * acumulada ≠ 0xFF" en 0x62E8 — corta la demo). Escanea todo el teclado.
+ */
+bool hal_any_key(void)
+{
+    int n = 0;
+    const uint8_t *keys = SDL_GetKeyboardState(&n);
+    for (int i = SDL_SCANCODE_A; i < n && i < SDL_SCANCODE_LGUI; i++)
+        if (keys[i]) return true;
+    return false;
+}
+
+/*
  * Fila 6 de la matriz MSX (activo-bajo). Mapeo host:
  *   CTRL → CTRL (bit1, correr)   ALT → GRAPH (bit2, turbo con CTRL)
  *   SHIFT → SHIFT (bit0)         F1-F3 → F1-F3 (bits 5-7)

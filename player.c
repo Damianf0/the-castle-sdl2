@@ -1426,6 +1426,35 @@ static void s_61F5(uint8_t flags, uint8_t b, uint8_t c)
 }
 
 /* ==========================================================================
+ * DEMO MODE (tramo demo de sub_5128, 0x5134-517B): con EAE4=1 (attract) y
+ * el game loop corriendo, el input NO viene del teclado sino del stream
+ * grabado en el ROM: records de 2 bytes [input, duración] apuntados por
+ * (0xEAE5) con el contador de repetición en 0xEAE7. Solo frames PARES.
+ * input: bits 0-3 = stick (GTSTCK), bit 4 = trigger. Cuando el puntero
+ * llega a 0x7BC0 → EAE3=1 (fin de la demo). El stream arranca en 0x7ABE
+ * (el primer avance lo deja en 0x7AC0).
+ * ========================================================================== */
+void player_demo_input(void)
+{
+    uint16_t hl;
+    uint8_t a, v;
+    if (rr(0xEAC9u) & 0x01u) return;               /* sub_5D5D: solo pares */
+    hl = (uint16_t)(rr(0xEAE5u) | ((uint16_t)rr(0xEAE6u) << 8));
+    a = rr(0xEAE7u);
+    if (a == 0u) {
+        hl += 2u;
+        wr(0xEAE5u, (uint8_t)hl);
+        wr(0xEAE6u, (uint8_t)(hl >> 8));
+        a = rom_rb_p((uint16_t)(hl + 1u));         /* duración del record */
+    }
+    wr(0xEAE7u, (uint8_t)(a - 1u));
+    v = rom_rb_p(hl);
+    wr(0xEACBu, (uint8_t)(v & 0x0Fu));
+    wr(0xEACCu, (v & 0x10u) ? 0xFFu : 0u);
+    if (hl >= 0x7BC0u) wr(0xEAE3u, 1u);            /* fin del stream */
+}
+
+/* ==========================================================================
  * sub_623C (cola del game loop, en 40B6): timer del sprite de partícula
  * (0xEAF9, plano 13; al expirar lo esconde) y cada 16 frames los TIMERS
  * de power-up E343/E344 (sub_6265): por debajo de 6 la música avisa
@@ -1557,6 +1586,8 @@ void player_death_run(void)
     wr(0xE336u, (uint8_t)(rr(0xE336u) - 1u));
     if (!rr(0xEAE0u)) {
         wr(0xEAE0u, 1u);
+        /* 5AC5: en modo demo (EAE4) la muerte TERMINA la partida */
+        if (rr(0xEAE4u)) wr(0xEAE3u, 1u);
         for (int i = 0; i < 0x0D; i++)
             wr((uint16_t)(0xE324u + i), rr((uint16_t)(0xE336u + i)));
         if (rr(0xE331u)) wr(0xE331u, (uint8_t)(rr(0xE331u) + 4u));
@@ -1623,6 +1654,22 @@ void player_end_frame(void)
     wr(0xEAC9u, (uint8_t)(rr(0xEAC9u) + 1u));
 }
 
+/* sub_404B (cabeza): al ENTRAR a cada sala (la transición real SALE del
+ * game loop y 4036 recarga vía 64DD+404B): EAC9=0 (¡la paridad arranca
+ * de cero por sala!), fase de salto y flags de salida/fin limpios.
+ * Llamar después de CADA rl_load_room. (El 6358 del final — espera de
+ * tecla al entrar sin input, juego normal — PENDIENTE.) */
+void player_room_enter(void)
+{
+    wr(0xEAC9u, 0u);
+    wr(0xEAD6u, 0u);
+    wr(0xEAE0u, 0u);
+    wr(0xEAE1u, 0u);
+    wr(0xEAE2u, 0u);
+    wr(0xEAE3u, 0u);
+    wr(0xEAE8u, 0u);
+}
+
 /* ==========================================================================
  * 0x62D8 (rama 62FA, juego real) — velocidad/teclas de sistema por frame.
  * C = (0xEAD3) = fila 6 de la matriz acumulada en el busy-wait (activo-bajo).
@@ -1646,6 +1693,17 @@ double player_frame_ms(void)
 void player_speed_frame(uint8_t row6)
 {
     uint8_t a, d, e;
+    /* 62D8 rama DEMO (EAE4=1): tempo fijo 6; CUALQUIER tecla de la matriz
+     * (62E8: alguna fila acumulada ≠ 0xFF) corta la demo y arranca el
+     * juego: EAE4=0 + EAE3=1 (sub_62F1). */
+    if (rr(0xEAE4u)) {
+        wr(0xEAF3u, 6u);
+        if (hal_any_key()) {
+            wr(0xEAE4u, 0u);
+            wr(0xEAE3u, 1u);
+        }
+        return;
+    }
     if (row6 & 0x02u)        { a = 0x70u; d = 0x00u; e = 6u; }
     else if (row6 & 0x04u)   { a = 0x30u; d = 0x07u; e = 4u; }
     else                     { a = 0x01u; d = 0x0Cu; e = 2u; }

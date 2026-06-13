@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-06-12 — DEMO MODE real: 1288 frames de gameplay frame-exactos (integral)
+
+- **La demo es una partida normal** (sub_4029) con EAE4=1 (modo attract,
+  lo setea 4A4A para todo el título) e input desde el stream grabado del
+  ROM (0x7ABE → 0x7BC0, records [input,duración], tramo demo de sub_5128,
+  solo frames pares). Portada: player_demo_input() + faithful_demo() +
+  el ciclo attract completo en title.c (3 ciclos de título → demo → ...;
+  una tecla en el título O cortando la demo arranca el juego).
+- **Rama demo de 62D8** en player_speed_frame: tempo 6 fijo y CUALQUIER
+  tecla corta la demo (EAE4=0 + EAE3=1) — hal_any_key() nuevo.
+- **Tres mecánicas del motor descubiertas/corregidas por el oráculo**:
+  1. sub_404B: al ENTRAR a cada sala se RESETEA el frame counter EAC9
+     (¡la paridad par/impar arranca de cero por sala!) y EAD6/EAE0-3/EAE8
+     — player_room_enter() tras cada rl_load_room.
+  2. La transición y la muerte CORTAN el frame (el loop real hace RET y
+     4036 recarga): los loops del port ahora hacen continue.
+  3. sub_5A63 (5AC5): en modo demo la MUERTE termina la partida (EAE3=1)
+     — sin respawn; así termina la demo real (la IA se tira a un pozo en
+     sala 74). Esto explica también el "fin por caída" visto en sala 06.
+- **Suite `demo` nueva**: tools/tr_demo.tcl deja correr el juego sin tocar
+  teclas (título → demo) y captura el run completo; el port lo reproduce
+  EXACTO: 1288/1288 frames (sala/posición/fase/vidas/input/puntero),
+  incluido el corte final. Es la prueba integral de TODO el motor:
+  jugador, bloques, enemigos, estructurales, pickup, transiciones, daño.
+  15/15 suites.
+- El demo legacy (game_frame + motor maqueta) ya no se usa en el flujo:
+  actors/camera/room/enemies/doors legacy quedan muertos (limpieza
+  pendiente).
+
 ## 2026-06-12 — Fase 5: MINIMAPA del HUD completo
 
 - **Pintor (sub_640F) decodificado y portado**: cada sala del castillo

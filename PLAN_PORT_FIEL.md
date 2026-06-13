@@ -319,13 +319,22 @@ Pendiente de la fase:
   incluye 70map (pickup del mapa) y 70out (salida con mapa). El harness
   necesita rl_boot_vram (colores base del charset fijo).
 - Color-cycling del power-up 0x23 (sub_7510, cosmético).
-- CAÍDA AL POZO: caer por el borde inferior (visto en sala 06) termina la
-  partida y vuelve al título/demo en el juego real — trazar dónde retorna
-  el loop (no es exit edge 5: EAE1 queda 0) y portarlo con el flujo título.
-- Demo mode real (input replay 0x7ABE vía EAE5/EAE7 en sub_5128) — al
-  portarlo muere el motor maqueta restante (actors.c, game_frame, camera.c,
-  room.c, enemies.c, doors.c legacy).
-- Condición de final del juego y game over al título.
+- ~~CAÍDA AL POZO~~ ✅ resuelto (2026-06-12): no era un mecanismo aparte —
+  era la MUERTE EN MODO DEMO (sub_5A63/5AC5: con EAE4=1 la muerte pone
+  EAE3=1 y termina la partida). Portado en player_death_run.
+- ~~Demo mode real~~ ✅ portado y validado (2026-06-12): player_demo_input
+  (stream 0x7ABE) + faithful_demo + ciclo attract en title.c + rama demo
+  de 62D8 (hal_any_key corta). Suite `demo`: el run completo de la demo
+  (1288 frames) frame-exacto — prueba INTEGRAL del motor. Descubiertos
+  además: sub_404B resetea EAC9 al entrar a cada sala (paridad por sala,
+  player_room_enter) y la transición/muerte CORTAN el frame (continue).
+  El motor maqueta (actors.c, game_frame, camera.c, room.c, enemies.c,
+  doors.c) quedó sin uso en el flujo — LIMPIEZA pendiente.
+- Condición de final del juego y game over al título (4F16: pantalla
+  GAME OVER; strings en 0x6467).
+- sub_6358 (cola de 404B, juego normal): al entrar a una sala sin input
+  el juego real ESPERA tecla (silencia y postea) — pendiente de portar
+  en el flujo interactivo.
 
 ### Fase 6 — Música/PSG verificada
 - No confiar en lo actual de oído (ya hubo datos mal direccionados: 0x7ABE vs
