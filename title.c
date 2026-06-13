@@ -560,21 +560,6 @@ static void intro_cleanup(void)
 }
 
 /* ==========================================================================
- * sub_4A29 — Limpiar estado auxiliar (sub_4029)
- *
- * Limpia bytes en 0xEAF1/F2/F4/F5 (transpose, tempo):
- *   (0xEAF1)=0, (0xEAF2)=0, (0xEAF4)=0, (0xEAF5)=0
- * ========================================================================== */
-static void reset_aux_state(void)
-{
-    extern uint8_t g_music_transpose_fine;
-    extern uint8_t g_music_transpose_coarse;
-    g_music_transpose_fine   = 0u;
-    g_music_transpose_coarse = 0u;
-    music_set_tempo(0u, 0u);   /* silencio hasta cargar música del juego */
-}
-
-/* ==========================================================================
  * sub_4A4A — Pantalla de título + demo + juego
  *
  * Estructura:
@@ -612,8 +597,8 @@ static void reset_aux_state(void)
  * ========================================================================== */
 void title_screen(void)
 {
-    /* sub_4D52 a las 0x4019: reset nivel + HUD con "NO"/"MAP" antes del title */
-    game_reset_level();
+    /* sub_4D52 a las 0x4019: reset de partida + HUD con "NO"/"MAP" */
+    rl_reset();
     draw_hud();
 
     /* Inicialización */

@@ -30,9 +30,6 @@
 #include "hal.h"
 #include "game.h"
 #include "geom.h"
-#include "actors.h"
-#include "blocks_port.h"
-#include "tiledata.h"
 #include "room_loader.h"
 #include "player.h"
 
@@ -68,42 +65,10 @@ uint8_t g_score[3]       = {0, 0, 0};
 uint8_t g_hiscore[3]     = {0, 0, 0};
 uint8_t g_map[0x400]     = {0};
 
+uint8_t g_keyframe_queue[9];      /* 0xEACD (espejo legacy) */
+
 const uint8_t *g_rom      = NULL;
 uint32_t       g_rom_size = 0;
-
-/* ==========================================================================
- * STUBS de doors.c (update_roller_by_pos, update_bat_by_slot)
- *
- * doors.c necesita llamar a funciones de enemies.c para los rollers
- * y murciélagos que aparecen en la tabla de coleccionables.
- * Aquí las implementamos como wrappers que delegan a enemies.c.
- *
- * En una versión completa se refactorizaría enemies.c para exponer
- * estas funciones directamente.
- * ========================================================================== */
-void update_roller_by_pos(uint8_t col, uint8_t row, uint8_t move_flags)
-{
-    /*
-     * Equivale a llamar sub_710B con un slot sintético.
-     * Por ahora: solo dibujar el tile en la posición dada.
-     * TODO: instanciar un EnemySlot temporal y llamar a la lógica real.
-     */
-    (void)move_flags;
-    /* Tile del roller = 0x34 en la name table */
-    uint16_t addr = (uint16_t)(0x1800u + (uint16_t)row * 32u + col + 1u);
-    hal_vdp_write_vram(addr, 0x34u);
-}
-
-void update_bat_by_slot(uint8_t col, uint8_t row, uint8_t move_flags)
-{
-    /*
-     * Equivale a llamar sub_719D con un slot sintético.
-     * TODO: instanciar un EnemySlot temporal y llamar a la lógica real.
-     */
-    (void)move_flags;
-    uint16_t addr = (uint16_t)(0x1800u + (uint16_t)row * 32u + col + 1u);
-    hal_vdp_write_vram(addr, 0x36u);
-}
 
 /* ==========================================================================
  * CARGA DE ROM
@@ -160,102 +125,6 @@ static uint8_t *load_rom(const char *path, uint32_t *size_out)
 }
 
 /* ==========================================================================
- * GAME FRAME (sub_4064) — Una iteración del bucle de juego por frame
- *
- * Estructura fiel al código original en 0x4064:
- *
- *   sub_4064:
- *     CALL sub_5D5D         → check title_mode flag (g_state_flags bit 0)
- *     [if not title mode: reset anim_frame, facing]
- *     CALL sub_6383         → reset keyframe queue
- *     LD A,1 → (0xEAE8)    → enemies_active = 1
- *     CALL sub_5128         → music tick + VSync
- *     XOR A → (0xEAE8)     → enemies_active = 0
- *     CALL 0x62D8           → render background + triggers
- *     CALL sub_5B96         → scroll update
- *     check g_restart_flag  → if set, return
- *     CALL sub_442D         → update doors
- *     CALL sub_434A         → update collectibles
- *     CALL sub_40BB         → update player
- *     CALL sub_6F5C         → update enemies
- *     CALL sub_4406         → update traps
- *     CALL sub_438D         → check key pickup
- *     CALL sub_4499         → check door exit
- *     CALL sub_5A2D         → update HUD
- *     check g_game_over     → if set, return
- *     check g_room_exit     → CALL sub_5053 → if NZ, return
- *     g_state_flags++
- *     CALL 0x623C           → camera/particles update
- *     JR sub_4064
- * ========================================================================== */
-void game_frame(void)
-{
-    /* sub_5D5D: check title/demo mode bit */
-    bool title_mode = (g_state_flags & 0x01u) != 0;
-    if (!title_mode) {
-        g_anim_frame = 0;
-        g_facing     = 0;
-    }
-
-    /* sub_6383: reset keyframe queue */
-    memset(g_keyframe_queue, 0xFFu, sizeof(g_keyframe_queue));
-
-    /* enemies_active toggle around poll/music (sub_5128) */
-    g_enemies_active = 1;
-    if (!hal_poll_events()) { g_game_over = 1; return; }
-    g_enemies_active = 0;
-
-    /* sub_62D8: render background with trigger processing */
-    render_background();
-
-    /* sub_5B96: scroll/trigger update */
-    scroll_update();
-
-    /* check restart flag (g_restart_flag) */
-    if (g_restart_flag) return;
-
-    /* update_doors (sub_442D) */
-    update_doors();
-
-    /* update_collectibles (sub_434A) */
-    update_collectibles();
-
-    /* game_loop (sub_40BB: player movement + camera) */
-    game_loop();
-
-    /* update_enemies (sub_6F5C + sub_6F27) */
-    update_enemies();
-
-    /* update_traps (sub_4406) */
-    update_traps();
-
-    /* check_key_pickup (sub_438D) */
-    check_key_pickup();
-
-    /* check_door_exit (sub_4499) */
-    check_door_exit();
-
-    /* update HUD (sub_5A2D — solo la parte dinámica) */
-    draw_hud_dynamic();
-
-    /* check game over */
-    if (g_game_over) return;
-
-    /* check room exit → sub_5053 */
-    if (g_room_exit) {
-        room_transition();
-        if (g_room_exit) return;
-    }
-
-    /* increment frame counter */
-    g_state_flags++;
-
-    /* camera + particles update (sub_623C) */
-    camera_update();
-    update_particles();
-}
-
-/* ==========================================================================
  * LOOP PRINCIPAL (sub_401C)
  *
  * Estructura fiel al código original en 0x4016:
@@ -282,8 +151,8 @@ static void main_loop(void)
         /* Si el usuario cerró la ventana durante title_screen */
         if (!hal_poll_events()) break;
 
-        /* sub_4D52: reset de nivel tras game over */
-        game_reset_level();
+        /* sub_4D52: reset de partida tras game over */
+        rl_reset();
 
         /* sub_4029: clear aux state */
         music_set_tempo(0u, 0u);
@@ -937,13 +806,13 @@ int main(int argc, char *argv[])
     /* --- 3. Cargar tiles ROM → VRAM emulada --- */
     tiles_load_from_rom(rom_buf, rom_size);
 
-    /* --- 6. Inicializar subsistemas --- */
-    game_init();
-    enemies_init();
-    particles_init();
-    doors_init();
+    /* --- 6. Inicializar video + m�sica --- */
+    hal_vdp_disable_screen();
+    hal_vdp_clear_sprites();
+    hal_vdp_init_screen2();
+    hal_vdp_write_reg(7, 0x0F);
+    memset(g_keyframe_queue, 0xFF, sizeof(g_keyframe_queue));
     music_init();
-    camera_init();
 
     /* --- Modo viewer interactivo: recorré las 100 salas con las flechas.
      *   CASTLE_VIEW=1  (CASTLE_GEOMDBG=1 para el render de ladrillo) */

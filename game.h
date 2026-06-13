@@ -52,80 +52,17 @@ extern uint8_t g_map[0x400];    /* 0xE000 */
 extern const uint8_t *g_rom;       /* puntero al buffer de la ROM            */
 extern uint32_t       g_rom_size;  /* tamaño del buffer                      */
 
+extern uint8_t g_keyframe_queue[9];   /* 0xEACD — cola de keyframes legacy */
+
 /* ==========================================================================
  * API DE CADA MÓDULO
  * ========================================================================== */
 
-/* --- tiles.c --- */
+/* --- tiles.c: carga del charset/tiles del ROM a la VRAM emulada --- */
 void    tiles_load_from_rom(const uint8_t *rom_data, uint32_t rom_size);
-void    tiles_rom_to_vram(uint32_t rom_file_off, uint8_t vram_start,
-                          uint8_t count);
-void    tiles_vram_from_rom(uint32_t rom_file_off, uint8_t vram_start,
-                            uint8_t count);
-void    tiles_reload_all(void);
-void    tiles_reload_walls_and_anim(void);
 void    tiles_load_from_desc(uint16_t *desc_addr, uint16_t *dest, uint8_t count);
-void    tiles_animate(uint8_t frame_counter);
-void    tiles_dump_vram(const char *label);
-uint8_t tiles_vram_idx_blank(void);
-uint8_t tiles_vram_idx_door(void);
-uint8_t tiles_vram_idx_bg3(uint8_t n);
-uint8_t tiles_vram_idx_key(void);
-uint8_t tiles_vram_idx_anim_bg(uint8_t n);
-uint8_t tiles_vram_idx_bg4(uint8_t n);
-uint8_t tiles_vram_idx_wall(uint8_t n);
-uint8_t tiles_vram_idx_space(void);
 
-/* --- enemies.c --- */
-void enemies_init(void);
-void update_enemies(void);
-void sub_6F5C(void);
-
-/* Stubs requeridos por doors.c */
-void update_roller_by_pos(uint8_t col, uint8_t row, uint8_t move_flags);
-void update_bat_by_slot(uint8_t col, uint8_t row, uint8_t move_flags);
-
-/* --- particles.c --- */
-void particles_init(void);
-void update_particles(void);
-void sub_61F5(uint8_t move_flags, uint8_t enemy_col, uint8_t enemy_row);
-void sub_7279(uint8_t *col_inout, uint8_t *row_inout, uint8_t anim_id);
-
-/* --- doors.c --- */
-void    doors_init(void);
-void    objects_load_from_rom(uint8_t room_x);  /* puebla tablas de objetos desde ROM */
-void    update_doors(void);
-void    check_door_exit(void);
-void    update_collectibles(void);
-void    check_key_pickup(void);
-void    update_traps(void);
-uint8_t doors_keys_collected(void);
-uint8_t doors_find_trigger(uint8_t col, uint8_t row);
-
-/* --- the_castle.c (game logic) --- */
-void game_init(void);
-void game_reset_level(void);
-void game_loop(void);
-
-/* --- main.c (per-frame game loop) --- */
-void game_frame(void);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* CASTLE_GAME_H */
-
-extern uint8_t g_anim_ctr[3];   /* animation counter per screen third (enemies.c) */
-
-/* --- room.c --- */
-void room_init(void);
-void room_load_initial(void);
-void room_load_title(void);
-void room_transition(void);
-bool room_script_tick(void);
-
-/* --- music.c --- */
+/* --- music.c (reproductor PSG fiel) --- */
 void music_init(void);
 void music_isr_tick(void);
 void music_load(uint16_t music_a_addr, uint16_t music_b_addr);
@@ -138,43 +75,28 @@ void music_room_start(void);   /* 0x656B: tema por sala según power-ups */
 void music_play_death(void);   /* sub_5B35/5B56: jingle 0x7A73/0x7A8F */
 void music_stop(void);
 
+/* --- hud.c: HUD estático del boot (labels + áreas mapa/logo + overlay) --- */
+void draw_hud(void);
+
 /* --- pickup.c: minimapa del HUD --- */
 void minimap_draw_full(void);      /* sub_64C3+638E: pickup del mapa 0x22 */
 void minimap_room_exit_mark(void); /* sub_61E8+5053: al salir de la sala  */
 
-/* --- camera.c --- */
-void camera_init(void);
-void camera_update(void);
-void scroll_update(void);
-void render_background(void);
-void draw_hud(void);
-void draw_hud_dynamic(void);
-void camera_draw_string(uint8_t col, uint8_t row, uint16_t rom_str_addr,
-                        uint8_t tile_base, uint8_t delay_frames);
-extern uint8_t g_music_transpose_fine;
-extern uint8_t g_music_transpose_coarse;
-extern uint8_t g_music_tempo_counter;
-
-/* --- particles.c (shared state) --- */
-extern uint8_t g_spark_timer_a;
-extern uint8_t g_spark_timer_b;
-extern uint8_t g_death_fade_timer;
-
-/* --- room.c (shared state) --- */
-extern uint8_t g_tilemap[];
-extern uint8_t g_room_x;
-extern uint8_t g_room_y;
-
-extern uint8_t g_keyframe_queue[9];
-
 /* --- title.c --- */
 void title_screen(void);
 
-/* --- main.c: juego fiel (render VRAM real + actores/llaves/puertas/enemigos).
- * Corre hasta que se cierra la ventana. start_room en hex (0x70 = arranque). */
+/* --- main.c: juego fiel (render VRAM real + jugador/enemigos/llaves/
+ * puertas/objetos). Corre hasta que se cierra la ventana. start_room en
+ * hex (0x70 = arranque). */
 void faithful_play(uint8_t start_room);
 
 /* DEMO real (4AA4-4AC7): partida con el input grabado del ROM (0x7ABE)
  * y EAE4=1. Sale por fin del stream (EAE4 queda 1 → volver al título) o
  * por tecla (EAE4=0 → arrancar el juego). */
 void faithful_demo(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* CASTLE_GAME_H */

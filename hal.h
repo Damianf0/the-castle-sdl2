@@ -124,6 +124,10 @@ bool    hal_key_pressed(void);
  */
 bool    hal_any_key(void);
 
+/* Modo actores/interactivo (lo consume el render del VDP y los efectos
+ * bloqueantes del motor). Definido en hal_sdl2.c. */
+extern int g_actors_on;
+
 /**
  * hal_msx_keyrow6() — Fila 6 de la matriz de teclado MSX, activo-bajo
  * (bit0=SHIFT, bit1=CTRL, bit2=GRAPH, bit3=CAPS, bit5=F1, bit6=F2, bit7=F3).
