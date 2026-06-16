@@ -124,6 +124,12 @@ bool    hal_key_pressed(void);
  */
 bool    hal_any_key(void);
 
+/**
+ * hal_cheat_keys() — bitmask de las teclas de CHEAT de QA (F5-F9):
+ *   bit0 F5 god, bit1 F6 llaves, bit2 F7 mapa, bit3 F8 sala--, bit4 F9 sala++.
+ */
+uint8_t hal_cheat_keys(void);
+
 /* Modo actores/interactivo (lo consume el render del VDP y los efectos
  * bloqueantes del motor). Definido en hal_sdl2.c. */
 extern int g_actors_on;

@@ -811,6 +811,24 @@ bool hal_any_key(void)
 }
 
 /*
+ * Teclas de CHEAT de QA (bitmask, no son parte del MSX). F5-F9:
+ *   bit0 F5 = god mode (toggle)   bit1 F6 = dar todas las llaves
+ *   bit2 F7 = dar el mapa         bit3 F8 = sala anterior (barrido)
+ *   bit4 F9 = sala siguiente (barrido)
+ */
+uint8_t hal_cheat_keys(void)
+{
+    const uint8_t *keys = SDL_GetKeyboardState(NULL);
+    uint8_t m = 0u;
+    if (keys[SDL_SCANCODE_F5]) m |= 0x01u;
+    if (keys[SDL_SCANCODE_F6]) m |= 0x02u;
+    if (keys[SDL_SCANCODE_F7]) m |= 0x04u;
+    if (keys[SDL_SCANCODE_F8]) m |= 0x08u;
+    if (keys[SDL_SCANCODE_F9]) m |= 0x10u;
+    return m;
+}
+
+/*
  * Fila 6 de la matriz MSX (activo-bajo). Mapeo host:
  *   CTRL → CTRL (bit1, correr)   ALT → GRAPH (bit2, turbo con CTRL)
  *   SHIFT → SHIFT (bit0)         F1-F3 → F1-F3 (bits 5-7)

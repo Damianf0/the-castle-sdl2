@@ -176,11 +176,18 @@ void faithful_play(uint8_t start_room)
     music_room_start();        /* 0x656B: tema por sala (cola de sub_64DD) */
     g_actors_on = 1;
 
+    printf("[QA cheats]  F5=god (invuln+vidas)  F6=todas las llaves  "
+           "F7=mapa  F8/F9=sala -/+ (barrido)\n");
+
     /* MOTOR FIEL completo: jugador (sub_40BB+6F5C), bloques (sub_434A),
      * ENEMIGOS reales (sub_438D), daño/muerte (sub_5A2D/5A63), puertas,
      * transiciones (sub_5053), estructurales e43e y PICKUP por celda con
      * efectos reales (sub_5B96/5BB0 — la maqueta AABB murió). */
     while (hal_poll_events()) {
+        if (cheats_frame(&room)) {             /* QA: F5-F9 (teletransporte) */
+            hal_wait_game_frame(player_frame_ms());
+            continue;
+        }
         pickup_frame();        /* sub_5B96: pickup (tras 62D8, antes de 442D) */
         if (rl_ram_rb(0xEAE3u)) break;         /* 0x20: fin de la partida */
         player_elev_frame();   /* sub_442D: ascensores PRIMERO */

@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-06-12 — Cheats de QA para recorrer el castillo (cheats.c)
+
+Teclas de función en el juego interactivo (faithful_play), sobre el espejo
+de RAM real — indistinguibles de los efectos legítimos:
+- **F5** god mode (toggle): invulnerable (power-up rojo permanente, E343) +
+  vidas siempre al máximo (E324/E336=9, nunca game over; caer a un pozo te
+  respawnea en vez de terminar la partida).
+- **F6** dar 9 llaves de cada color (E337-E33C) + redibujo del HUD — abre
+  cualquier puerta.
+- **F7** dar el mapa (E321 bit3) + dibujar el minimapa completo.
+- **F8 / F9** sala anterior / siguiente en el barrido 00..99 — teletransporta
+  ignorando paredes y conexiones, para recorrer las 100 salas. El jugador
+  aparece en una celda libre con piso (mismo criterio que pick_cell de los
+  fixtures; fallback a cualquier celda no sólida — cobertura 100/100 salas).
+- Reusa la secuencia de carga real (geom_decode_room + rl_load_room +
+  player_sync_pixel + player_room_enter + music_room_start). hal_cheat_keys()
+  nuevo (F5-F9, fuera de la matriz MSX). Sólo activo en el juego, no en los
+  harness ni la demo — 15/15 suites intactas.
+
+## 2026-06-12 — Limpieza: motor maqueta muerto borrado (-5380 líneas)
+
+- Borrados actors/blocks_port/camera/doors/enemies/particles/room/
+  the_castle/tiledata.c: tras el demo mode real, nada del flujo vivo los
+  usaba. El port quedó en 10 archivos .c (era 19); exe 187→157 KB.
+- draw_hud reescrito en hud.c (HUD estático del boot, fiel y autocontenido).
+- game.h purgado de ~25 declaraciones colgantes a módulos borrados y del
+  `#endif` del include-guard que quedaba a media altura (todo lo de abajo
+  estaba fuera del guard). reset_aux_state (muerta) y los stubs de doors
+  (update_roller/bat) eliminados.
+
 ## 2026-06-12 — DEMO MODE real: 1288 frames de gameplay frame-exactos (integral)
 
 - **La demo es una partida normal** (sub_4029) con EAE4=1 (modo attract,

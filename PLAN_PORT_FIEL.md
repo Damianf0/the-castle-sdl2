@@ -332,6 +332,14 @@ Pendiente de la fase:
   doors.c) quedó sin uso en el flujo — LIMPIEZA pendiente.
 - Condición de final del juego y game over al título (4F16: pantalla
   GAME OVER; strings en 0x6467).
+
+**LIMPIEZA ✅ (2026-06-12)**: el motor maqueta entero (actors/blocks_port/
+camera/doors/enemies/particles/room/the_castle/tiledata.c) BORRADO tras el
+demo real; 10 archivos .c, exe 157 KB. draw_hud → hud.c. game.h purgado.
+
+**CHEATS de QA ✅ (2026-06-12, cheats.c)**: F5 god (invuln+vidas), F6 todas
+las llaves, F7 mapa, F8/F9 barrido de salas 00..99 (spawn en celda libre).
+Sólo en faithful_play; hal_cheat_keys nuevo.
 - sub_6358 (cola de 404B, juego normal): al entrar a una sala sin input
   el juego real ESPERA tecla (silencia y postea) — pendiente de portar
   en el flujo interactivo.

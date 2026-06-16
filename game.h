@@ -82,6 +82,10 @@ void draw_hud(void);
 void minimap_draw_full(void);      /* sub_64C3+638E: pickup del mapa 0x22 */
 void minimap_room_exit_mark(void); /* sub_61E8+5053: al salir de la sala  */
 
+/* --- cheats.c: cheats de QA (F5-F9) en el juego interactivo. Actualiza
+ * *room si teletransporta; devuelve 1 si lo hizo (saltar el resto del frame). */
+int cheats_frame(uint8_t *room);
+
 /* --- title.c --- */
 void title_screen(void);
 
