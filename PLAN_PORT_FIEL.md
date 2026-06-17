@@ -377,9 +377,19 @@ Sólo en faithful_play; hal_cheat_keys nuevo.
   ~16 s = volumen constante); canal B R9=0x0D; tick cada 6 VBlanks ✓;
   R7=0xB8 ✓. Corregidos: play_note (era shape 0x08 + período inventado →
   trémolo) y el envelope del HAL (corría 16× rápido y los shapes 0-7
-  repetían). PENDIENTE de validar: volúmenes/mixer de los 3 tipos de SFX
-  (R4/R5/R6 — capturar con aplastes), tema de fin/demo, y la intro
-  registro a registro (comparación automática port vs oráculo).
+  repetían).
+- **VALIDADO ✅ (2026-06-17)**: suite `música` — la secuencia de notas del
+  tema in-game (A=0x78D2, B=0x7916) del port == ISR real: 114/114 canal A
+  y 126/126 canal B (CASTLE_MUSICTRACE vs tools/tr_musicseq.tcl). Leído el
+  ISR real (sub_75D4/7615/765C): `channel_tick` del port es transcripción
+  exacta (mismo manejo de duración/bit7/0xFE-loop/0xFF-fin para ambos
+  canales). Artefactos descartados: capturas en la transición título→juego
+  (B en silencio) y E343=1 en el fix-player (dispara transpose 623C → usar
+  E343=0x7F). PENDIENTE (menor): volúmenes/mixer de los 3 tipos de SFX
+  (R4/R5/R6 con aplastes) y la intro registro a registro.
+- **Control de volumen QA ✅ (2026-06-17)**: F10 mute / F11 vol− / F12 vol+
+  (volumen maestro 0..8 en hal_sdl2.c, escala la mezcla sin tocar el PSG;
+  global vía el pump de eventos).
 
 ## Orden razonado
 

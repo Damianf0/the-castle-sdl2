@@ -392,6 +392,55 @@ def run(results):
         return errs
     check('GAME OVER (sub_4F16, recuadro vs openMSX)', t_gameover)
 
+    # --- 6h. MÚSICA: secuencia de notas vs oráculo (Fase 6) -------------------
+    # El reproductor PSG (music.c) debe decodificar los streams del tema
+    # in-game (A=0x78D2, B=0x7916) idéntico al ISR real. CASTLE_MUSICTRACE
+    # corre N ticks del ISR y vuelca las escrituras PSG; de ahí se extrae la
+    # secuencia de períodos por canal (R8=0x10→nota A, R9≠0→nota B). Debe
+    # coincidir, alineada por fase, con la secuencia de notas capturada en
+    # openMSX (tools/tr_musicseq.tcl, jugador vivo, sin transpose).
+    def t_music():
+        rom = open(EXE.replace('the_castle.exe', 'the_castle.rom'), 'rb').read()
+        def period(note):
+            if note == 0x60: return 0           # rest
+            o = 0x7812 - 0x4000 + note * 2
+            return rom[o] | (rom[o + 1] << 8)
+        fix = os.path.join(FIX, 'music', 'musicseq.txt')
+        orc = [l.strip().split(':') for l in open(fix) if ':' in l]
+        oA = [period(int(v, 16)) for c, v in orc if c == '0']
+        oB = [period(int(v, 16)) for c, v in orc if c == '2']
+        out = os.path.join(tempfile.gettempdir(), 'musictrace.txt')
+        env = dict(os.environ, CASTLE_MUSICTRACE=out,
+                   CASTLE_TEMPO='6', CASTLE_TICKS='400')
+        r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
+                           text=True, timeout=60)
+        if r.returncode != 0 or not os.path.exists(out):
+            return ['exe falló']
+        rg = {0: 0, 1: 0, 2: 0, 3: 0}; pA = []; pB = []
+        for ln in open(out):
+            p = ln.split()
+            if len(p) != 2: continue
+            reg, val = int(p[0]), int(p[1])
+            if reg in (0, 1, 2, 3): rg[reg] = val
+            elif reg == 8: pA.append((rg[1] << 8 | rg[0]) if val == 0x10 else 0)
+            elif reg == 9: pB.append((rg[3] << 8 | rg[2]) if val != 0 else 0)
+        os.remove(out)
+
+        def cyclic_prefix(sub, seq, k):
+            """¿las primeras k de sub aparecen contiguas (cíclico) en seq?"""
+            ss = seq * 3
+            for off in range(len(seq)):
+                if ss[off:off + k] == sub[:k]: return True
+            return False
+        errs = []
+        for name, p, o in (('A', pA, oA), ('B', pB, oB)):
+            k = min(len(p), 28)
+            if not cyclic_prefix(p, o, k):
+                errs.append('canal %s: la secuencia del port no alinea con '
+                            'el oráculo (primeras %d notas)' % (name, k))
+        return errs
+    check('música (secuencia de notas A/B vs openMSX)', t_music)
+
     # --- 7. título vs oráculo -------------------------------------------------
     # CASTLE_TITLEDUMP corre la intro real (rápido) y vuelca la VRAM en el
     # mismo momento que tools/cap_title.tcl capturó la del juego real en

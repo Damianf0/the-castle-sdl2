@@ -100,6 +100,10 @@ void    hal_psg_write(uint8_t reg, uint8_t val);
 /** Lee un registro PSG — equivale a BIOS RDPSG. */
 uint8_t hal_psg_read(uint8_t reg);
 
+/** Activa/desactiva el log de escrituras PSG (validación de música,
+ *  harness sin SDL). f=NULL desactiva. Formato: "reg val\n" por escritura. */
+void    hal_psg_log_set(void *f);
+
 /* ==========================================================================
  * INPUT
  * ========================================================================== */

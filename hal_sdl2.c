@@ -613,11 +613,17 @@ void hal_vdp_present(void)
  * Síntesis simplificada: onda cuadrada por canal, mezclada a S16.
  * ========================================================================== */
 
+/* Log de escrituras PSG para la validación de música (harness sin SDL).
+ * Si está activo se vuelca "reg val\n" por cada escritura. */
+static FILE *g_psg_log = NULL;
+void hal_psg_log_set(void *f) { g_psg_log = (FILE *)f; }
+
 void hal_psg_write(uint8_t reg, uint8_t val)
 {
     if (reg >= 16) return;
 
-    SDL_LockMutex(audio_mutex);
+    if (g_psg_log) fprintf(g_psg_log, "%u %u\n", reg, val);
+    if (audio_mutex) SDL_LockMutex(audio_mutex);   /* NULL en el harness */
     psg_regs[reg] = val;
 
     switch (reg) {
@@ -672,7 +678,7 @@ void hal_psg_write(uint8_t reg, uint8_t val)
         default: break;
     }
 
-    SDL_UnlockMutex(audio_mutex);
+    if (audio_mutex) SDL_UnlockMutex(audio_mutex);
 }
 
 uint8_t hal_psg_read(uint8_t reg)

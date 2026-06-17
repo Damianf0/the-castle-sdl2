@@ -778,6 +778,38 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* --- Modo traza de MÚSICA (sin SDL): CASTLE_MUSICTRACE=out.txt +
+     * CASTLE_MUSIC (game|title) + CASTLE_TEMPO (def 6) + CASTLE_TICKS (def
+     * 400). Carga el tema, corre N vblanks del ISR (music_isr_tick) y vuelca
+     * cada escritura PSG (reg val) — comparable contra el oráculo openMSX
+     * (tools/tr_psg.tcl). Valida el reproductor registro-a-registro. */
+    {
+        const char *mt = getenv("CASTLE_MUSICTRACE");
+        if (mt) {
+            const char *which = getenv("CASTLE_MUSIC");
+            int tempo = getenv("CASTLE_TEMPO") ? atoi(getenv("CASTLE_TEMPO")) : 6;
+            int ticks = getenv("CASTLE_TICKS") ? atoi(getenv("CASTLE_TICKS")) : 400;
+            FILE *f = fopen(mt, "w");
+            if (!f) { free(rom_buf); return 1; }
+            g_rom = rom_buf; g_rom_size = rom_size;
+            rl_reset();                       /* limpia el espejo RAM (EAF1-F8) */
+            music_init();
+            /* tema: title/game comparten streams 0x78D2/0x7916 (656B) */
+            music_load(0x78D2u, 0x7916u);
+            (void)which;
+            music_set_tempo((uint8_t)tempo, 0u);
+            music_set_transpose(0u, 0u);
+            hal_psg_log_set(f);
+            for (int i = 0; i < ticks; i++) music_isr_tick();
+            hal_psg_log_set(NULL);
+            fclose(f);
+            printf("CASTLE_MUSICTRACE: tempo %d, %d ticks -> %s\n",
+                   tempo, ticks, mt);
+            free(rom_buf);
+            return 0;
+        }
+    }
+
     /* --- Modo GAME OVER (sin SDL): CASTLE_GAMEOVER=out.txt. Carga la sala
      * 0x70, fuerza vidas=0, dibuja la pantalla GAME OVER (sub_4F16) y vuelca
      * la name table filas 13-15 — comparable contra tools/tr_gameover.tcl

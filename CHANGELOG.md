@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-06-17 — Fase 6: validación de la MÚSICA (secuencia de notas) + control de volumen
+
+- **Reproductor PSG validado registro-a-registro**: el tema in-game
+  (canal A = stream 0x78D2, canal B = 0x7916) se decodifica IDÉNTICO al
+  ISR real. Suite `música` nueva (CASTLE_MUSICTRACE corre N ticks del ISR
+  y vuelca las escrituras PSG; tools/tr_musicseq.tcl captura la secuencia
+  de notas en openMSX con el jugador vivo): **114/114 notas del canal A y
+  126/126 del canal B** coinciden, alineadas por fase. Confirma melodía +
+  bajo + tempo (tick cada 6 vblanks) fieles.
+- Dos artefactos de captura entendidos y descartados en el camino: (1) los
+  PSG dumps que arrancan en la transición título→juego muestran al canal B
+  en silencio (la música in-game aún no se asentó); (2) `E343=1` en el
+  fix-player de los oráculos dispara la lógica de power-up por expirar
+  (623C → transpose +5), que corrompe capturas largas — se usa E343=0x7F.
+- **Control de volumen de QA** (hal_sdl2.c): volumen maestro 0..8 que
+  escala la mezcla final SIN tocar el modelo PSG (la validación sigue
+  mirando psg_regs). Teclas globales (en el pump de eventos, andan en
+  título/demo/juego): **F10 mute, F11 volumen−, F12 volumen+**.
+
 ## 2026-06-12 — Cheats de QA para recorrer el castillo (cheats.c)
 
 Teclas de función en el juego interactivo (faithful_play), sobre el espejo
