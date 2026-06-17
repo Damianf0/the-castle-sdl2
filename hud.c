@@ -84,3 +84,15 @@ void draw_hud(void)
         hud_draw_string(19u, 2u, 0x6476u, 0x59u);   /* "MAP" */
     }
 }
+
+/* sub_4F16: pantalla GAME OVER (lives==0). Refleja vidas=0 en el HUD,
+ * limpia el recuadro central (cols 9-22, filas 13-15) y escribe
+ * "GAME OVER" (string ROM 0x6467) en (col 11, fila 14), tile-base 1
+ * (letras = chr-0x41+1, verificado contra openMSX). El caller hace la
+ * espera de 16 frames y vuelve al título. */
+void draw_game_over(void)
+{
+    rl_ram_wb(0xE336u, rl_ram_rb(0xE324u));         /* E336 = vidas (=0) */
+    hud_fill_rect(9u, 13u, 14u, 3u, 0u);            /* sub_628C ×3: limpiar */
+    hud_draw_string(11u, 14u, 0x6467u, 1u);         /* sub_629D: "GAME OVER" */
+}

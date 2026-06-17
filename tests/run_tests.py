@@ -367,6 +367,31 @@ def run(results):
     check('DEMO completa (%d frames, integral del motor)'
           % sum(1 for _ in open(os.path.join(FIX, 'demo', 'demo.txt'))), t_demo)
 
+    # --- 6g. GAME OVER vs oráculo (sub_4F16) ----------------------------------
+    # CASTLE_GAMEOVER carga la sala 0x70, fuerza vidas=0 y dibuja la pantalla
+    # GAME OVER; se compara la name table filas 13-15 contra openMSX
+    # (tools/tr_gameover.tcl) SÓLO en el recuadro cols 9-22 (lo que el motor
+    # escribe de forma determinista; el resto es estado de la sala).
+    def t_gameover():
+        fix = os.path.join(FIX, 'gameover', 'gameover.txt')
+        want = open(fix).read().splitlines()
+        out = os.path.join(tempfile.gettempdir(), 'gameover.txt')
+        env = dict(os.environ, CASTLE_GAMEOVER=out)
+        r = subprocess.run([EXE], cwd=ROOT, env=env, capture_output=True,
+                           text=True, timeout=60)
+        if r.returncode != 0 or not os.path.exists(out):
+            return ['exe falló']
+        got = open(out).read().splitlines()
+        os.remove(out)
+        errs = []
+        for ri, ro, rp in zip((13, 14, 15), want, got):
+            bo = bytes.fromhex(ro); bp = bytes.fromhex(rp)
+            diff = [c for c in range(9, 23) if bo[c] != bp[c]]
+            if diff:
+                errs.append('fila %d cols %s difieren' % (ri, diff))
+        return errs
+    check('GAME OVER (sub_4F16, recuadro vs openMSX)', t_gameover)
+
     # --- 7. título vs oráculo -------------------------------------------------
     # CASTLE_TITLEDUMP corre la intro real (rápido) y vuelca la VRAM en el
     # mismo momento que tools/cap_title.tcl capturó la del juego real en

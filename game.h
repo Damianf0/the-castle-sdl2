@@ -77,6 +77,7 @@ void music_stop(void);
 
 /* --- hud.c: HUD estático del boot (labels + áreas mapa/logo + overlay) --- */
 void draw_hud(void);
+void draw_game_over(void);     /* sub_4F16: pantalla GAME OVER (lives==0) */
 
 /* --- pickup.c: minimapa del HUD --- */
 void minimap_draw_full(void);      /* sub_64C3+638E: pickup del mapa 0x22 */

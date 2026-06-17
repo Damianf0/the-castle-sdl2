@@ -213,7 +213,14 @@ void faithful_play(uint8_t start_room)
         pickup_anim_frame();   /* sub_4499: animador de e3d6 */
         if (player_check_death()) {            /* sub_5A2D */
             player_death_run();                /* sub_5A63 */
-            if (rl_ram_rb(0xE324u) == 0u) break;   /* game over → título */
+            if (rl_ram_rb(0xE324u) == 0u) {    /* sub_4044: vidas==0 */
+                draw_game_over();              /* sub_4F16: pantalla GAME OVER */
+                for (int i = 0; i < 16; i++) { /* espera 16 frames (sub_5128) */
+                    hal_wait_game_frame(player_frame_ms());
+                    if (!hal_poll_events()) break;
+                }
+                break;                         /* → vuelve al título */
+            }
             rl_ram_wb(0xEAE0u, 0u);
             geom_decode_room(room);
             rl_load_room(room);                /* respawn en el punto de entrada */
@@ -765,6 +772,34 @@ int main(int argc, char *argv[])
             }
             fclose(f);
             printf("CASTLE_DEMOTRACE -> %s\n", dt);
+            free(rom_buf);
+            return 0;
+        }
+    }
+
+    /* --- Modo GAME OVER (sin SDL): CASTLE_GAMEOVER=out.txt. Carga la sala
+     * 0x70, fuerza vidas=0, dibuja la pantalla GAME OVER (sub_4F16) y vuelca
+     * la name table filas 13-15 — comparable contra tools/tr_gameover.tcl
+     * (sólo el recuadro cols 9-22 es determinista). */
+    {
+        const char *go = getenv("CASTLE_GAMEOVER");
+        if (go) {
+            FILE *f = fopen(go, "w");
+            if (!f) { free(rom_buf); return 1; }
+            g_rom = rom_buf; g_rom_size = rom_size;
+            rl_reset();
+            rl_boot_vram();
+            rl_load_room(0x70u);
+            rl_ram_wb(0xE324u, 0u);            /* 0 vidas */
+            draw_game_over();
+            for (int row = 13; row <= 15; row++) {
+                for (int c = 0; c < 32; c++)
+                    fprintf(f, "%02X", hal_vdp_read_vram(
+                              (uint16_t)(0x1800u + row * 32 + c)));
+                fprintf(f, "\n");
+            }
+            fclose(f);
+            printf("CASTLE_GAMEOVER -> %s\n", go);
             free(rom_buf);
             return 0;
         }
