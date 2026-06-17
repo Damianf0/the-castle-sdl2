@@ -178,6 +178,7 @@ void faithful_play(uint8_t start_room)
 
     printf("[QA cheats]  F5=god (invuln+vidas)  F6=todas las llaves  "
            "F7=mapa  F8/F9=sala -/+ (barrido)\n");
+    printf("[audio]      F10=mute  F11/F12=volumen -/+\n");
 
     /* MOTOR FIEL completo: jugador (sub_40BB+6F5C), bloques (sub_434A),
      * ENEMIGOS reales (sub_438D), daño/muerte (sub_5A2D/5A63), puertas,

@@ -124,6 +124,13 @@ bool    hal_key_pressed(void);
  */
 bool    hal_any_key(void);
 
+/* Volumen maestro de salida (0..8, 0=mudo). Controles de QA por F10-F12,
+ * fuera del modelo PSG. */
+void    hal_audio_vol_up(void);
+void    hal_audio_vol_down(void);
+void    hal_audio_mute_toggle(void);
+int     hal_audio_vol(void);
+
 /**
  * hal_cheat_keys() — bitmask de las teclas de CHEAT de QA (F5-F9):
  *   bit0 F5 god, bit1 F6 llaves, bit2 F7 mapa, bit3 F8 sala--, bit4 F9 sala++.

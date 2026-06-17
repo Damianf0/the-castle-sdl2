@@ -119,6 +119,11 @@ static uint32_t   psg_noise_phase = 0;
 static SDL_AudioDeviceID audio_dev;
 static SDL_mutex        *audio_mutex = NULL;
 
+/* Volumen maestro de salida: 0..8 (0 = mudo, 8 = 100%). Escala la mezcla
+ * final; NO toca el modelo PSG (la validación registro-a-registro sigue
+ * intacta porque mira psg_regs, no el sample de salida). */
+static int psg_master_vol = 8;
+
 /* --- Input --- */
 static uint8_t joy_state[2]; /* estado actual de los dos puertos */
 
@@ -277,8 +282,21 @@ bool hal_poll_events(void)
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
         if (ev.type == SDL_QUIT) g_quit_requested = true;
-        if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE)
-            g_quit_requested = true;
+        if (ev.type == SDL_KEYDOWN && !ev.key.repeat) {
+            /* Controles de AUDIO (globales: título, demo y juego). KEYDOWN
+             * es edge-triggered → un disparo por pulsación. */
+            switch (ev.key.keysym.sym) {
+                case SDLK_ESCAPE: g_quit_requested = true; break;
+                case SDLK_F10: hal_audio_mute_toggle();
+                    printf("[audio] %s\n",
+                           hal_audio_vol() ? "ON" : "MUTE"); break;
+                case SDLK_F11: hal_audio_vol_down();
+                    printf("[audio] volumen %d/8\n", hal_audio_vol()); break;
+                case SDLK_F12: hal_audio_vol_up();
+                    printf("[audio] volumen %d/8\n", hal_audio_vol()); break;
+                default: break;
+            }
+        }
     }
     if (g_quit_requested) return false;
 
@@ -763,6 +781,9 @@ static void psg_audio_callback(void *userdata, uint8_t *stream, int len)
             mixed += output ? (int32_t)vol : -(int32_t)vol;
         }
 
+        /* Volumen maestro (0..8 → 0..100%) */
+        mixed = (mixed * psg_master_vol) / 8;
+
         /* Clamp a S16 */
         if (mixed >  32767) mixed =  32767;
         if (mixed < -32768) mixed = -32768;
@@ -771,6 +792,28 @@ static void psg_audio_callback(void *userdata, uint8_t *stream, int len)
 
     SDL_UnlockMutex(audio_mutex);
 }
+
+/* ==========================================================================
+ * VOLUMEN MAESTRO (control de QA, fuera del modelo PSG)
+ * ========================================================================== */
+static int psg_vol_saved = 8;   /* nivel previo al mute */
+
+void hal_audio_vol_up(void)
+{
+    if (psg_master_vol < 8) psg_master_vol++;
+    psg_vol_saved = psg_master_vol ? psg_master_vol : psg_vol_saved;
+}
+void hal_audio_vol_down(void)
+{
+    if (psg_master_vol > 0) psg_master_vol--;
+    if (psg_master_vol) psg_vol_saved = psg_master_vol;
+}
+void hal_audio_mute_toggle(void)
+{
+    if (psg_master_vol) { psg_vol_saved = psg_master_vol; psg_master_vol = 0; }
+    else                  psg_master_vol = psg_vol_saved;
+}
+int  hal_audio_vol(void) { return psg_master_vol; }
 
 /* ==========================================================================
  * INPUT
