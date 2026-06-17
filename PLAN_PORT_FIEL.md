@@ -303,11 +303,24 @@ Mapa original (referencia):
   — 301/301 exactas. MAQUETA MUERTA: keys_port/items_port/doors_port
   BORRADOS (el harness PICKTRACE maneja transiciones de sala).
 
-Pendiente de la fase:
-- Ítems 0x20 (victoria, sala 09) y 0x21 (salas 50/99): las SECUENCIAS
-  bloqueantes sub_51D9 / sub_518E (usa la tabla 0x5748: sala/col/fila →
-  handler; ¡"respawns 0x5748" de las notas viejas era ESTO!) + helpers
-  4AE2 (flash de pantalla)/4B13/4E8E/4F93 — hoy son pickups mecánicos.
+Pendiente de la fase (COLA LARGA: raras y cosméticas, baja prioridad):
+- **Cinemática de VICTORIA 0x20 (sala 09)** — `sub_51D9`: secuencia grande
+  (~15 subrutinas: scroll de texto 5503/55F6, sprites del rey/princesa
+  5309/5318/5327, anim del castillo 52DC/52F2, recarga 65C4, música) que
+  corre al recoger el ítem final. Hoy el port hace el efecto a nivel FLUJO
+  (EAE3=1 → la partida termina → vuelve al título) pero SIN la cinemática.
+  Difícil de validar frame a frame (cinemática scripteada larga).
+- **Teletransporte del ítem ESPECIAL 0x21 (salas 50/99)** — `sub_518E`:
+  dibuja una línea (code 1, fila 0x13, cols 0..0x1D) y busca en la TABLA
+  0x5748 (entradas de 5 bytes: room/col/row → destL/destH) una coincidencia
+  por (E320,E334,E335); si la halla, HL = dest (ROM: sala 99→0x53D4,
+  sala 50→0x5431) y CALL sub_4262 + 0xEAFA (trampolín RAM que EJECUTA esa
+  rutina de transformación de sala). Hoy el port solo recarga la misma sala
+  (degradación aceptable). Porte requiere ejecutar/emular las rutinas
+  destino — magia per-ítem, rara.
+- Color-cycling del power-up 0x23 (sub_7510, cosmético): rota verticalmente
+  las 8 filas de COLOR de los 3 tiles del power-up (tabla de tiles E969 →
+  COLOR_BASE+tile*8) para el shimmer rojo. Sólo visual (salas 39/45/67).
 - ~~MINIMAPA~~ ✅ portado y validado (2026-06-12): sub_64C3 (canvas de
   chars 0x0E-0x29 en cols 17-23 filas 0-3) + 638E (marco de 6 sprites
   planos 0-5 + pinta las 100 salas) + 640F (el "pixel" de sala = 2
@@ -318,7 +331,6 @@ Pendiente de la fase:
   VRAM del HUD (name filas 0-4 + colores chars 0x00-0x3F) byte-exacta —
   incluye 70map (pickup del mapa) y 70out (salida con mapa). El harness
   necesita rl_boot_vram (colores base del charset fijo).
-- Color-cycling del power-up 0x23 (sub_7510, cosmético).
 - ~~CAÍDA AL POZO~~ ✅ resuelto (2026-06-12): no era un mecanismo aparte —
   era la MUERTE EN MODO DEMO (sub_5A63/5AC5: con EAE4=1 la muerte pone
   EAE3=1 y termina la partida). Portado en player_death_run.
@@ -330,8 +342,12 @@ Pendiente de la fase:
   player_room_enter) y la transición/muerte CORTAN el frame (continue).
   El motor maqueta (actors.c, game_frame, camera.c, room.c, enemies.c,
   doors.c) quedó sin uso en el flujo — LIMPIEZA pendiente.
-- Condición de final del juego y game over al título (4F16: pantalla
-  GAME OVER; strings en 0x6467).
+- ~~Game over al título~~ ✅ portado y validado (2026-06-17): `sub_4F16`
+  (draw_game_over en hud.c) — limpia el recuadro cols 9-22 filas 13-15 y
+  escribe "GAME OVER" (string ROM 0x6467, tile-base 1: letra=chr-0x41+1)
+  en (col 11, fila 14); faithful_play lo llama con vidas==0, espera 16
+  frames y vuelve al título. Suite `gameover` (CASTLE_GAMEOVER +
+  tools/tr_gameover.tcl): recuadro byte-exacto vs openMSX.
 
 **LIMPIEZA ✅ (2026-06-12)**: el motor maqueta entero (actors/blocks_port/
 camera/doors/enemies/particles/room/the_castle/tiledata.c) BORRADO tras el
