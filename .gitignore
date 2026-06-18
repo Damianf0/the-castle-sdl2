@@ -30,3 +30,7 @@ openmsx_err.txt
 noact
 enemy_trace.txt
 captitle_log.txt
+
+# paquete de distribución (artefacto)
+/TheCastle_port.zip
+/TheCastle_port/

@@ -16,7 +16,6 @@
 #include "hal.h"
 #include "game.h"
 #include "geom.h"
-#include "actors.h"
 
 int g_actors_on = 0;   /* el viewer lo activa para dibujar jugador+enemigos */
 
